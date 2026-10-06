@@ -883,6 +883,7 @@ function EaStudioAppContent() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [nodeContextMenu, setNodeContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [historyNodeId, setHistoryNodeId] = useState<string | null>(null);
   const [showGuideModal, setShowGuideModal] = useState(false);
 
   // States only used for crafting NEW nodes (spawning fallback)
@@ -1426,7 +1427,43 @@ function EaStudioAppContent() {
 
   const onPaneClick = useCallback(() => {
     setNodeContextMenu(null);
-  }, [setNodeContextMenu]);
+    setHistoryNodeId(null);
+  }, [setNodeContextMenu, setHistoryNodeId]);
+
+  const handleUpdateNodeZIndex = (nodeId: string, action: "front" | "back" | "forward" | "backward") => {
+    const zIndices = nodes.map(n => Number(n.style?.zIndex ?? 0));
+    const minZ = Math.min(...zIndices, 0);
+    const maxZ = Math.max(...zIndices, 0);
+
+    setNodes(nds => nds.map(n => {
+      if (n.id === nodeId) {
+        const currentZ = Number(n.style?.zIndex ?? 0);
+        let newZ = currentZ;
+
+        if (action === "front") newZ = maxZ + 10;
+        else if (action === "back") newZ = minZ - 10;
+        else if (action === "forward") newZ = currentZ + 5;
+        else if (action === "backward") newZ = currentZ - 5;
+
+        const updatedNode = {
+          ...n,
+          style: {
+            ...(n.style || {}),
+            zIndex: newZ
+          }
+        };
+
+        if (yjsNodes) {
+          yjsNodes.set(nodeId, updatedNode);
+        }
+
+        return updatedNode;
+      }
+      return n;
+    }));
+
+    setNodeContextMenu(null);
+  };
 
   const handleDeleteNodeById = (nodeId: string) => {
     setNodes(nds => nds.filter(n => n.id !== nodeId));
@@ -1586,6 +1623,13 @@ function EaStudioAppContent() {
   // Quick-spawn any ArchiMate element from floating toolbox
   const handleQuickSpawnNode = (type: typeof newNodeType, label: string, colorText: string) => {
     const spawnedId = `node-custom-${Date.now()}`;
+    
+    // Get creator metadata
+    const userJson = localStorage.getItem("labb_user");
+    const user = userJson ? JSON.parse(userJson) : { name: "Gäst", email: "labb@forefront.se" };
+    const creatorName = user.name || "Gäst";
+    const creationTime = new Date().toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" });
+
     const spawnedNode: Node = {
       id: spawnedId,
       type,
@@ -1594,7 +1638,9 @@ function EaStudioAppContent() {
         label, 
         description: type === "groupNode" ? "" : `Ett nyskapat ${colorText}-element ritat via den flytande verktygslådan.`,
         color: type === "stickyNode" ? "yellow" : undefined,
-        tint: "default" // default tint style
+        tint: "default", // default tint style
+        createdBy: creatorName,
+        createdAt: creationTime
       },
       style: type === "groupNode" ? { width: 340, height: 220 } : type === "stickyNode" ? { width: 160, height: 160 } : undefined
     };
@@ -1619,11 +1665,24 @@ function EaStudioAppContent() {
   // Drag and Drop from APM Palette onto ReactFlow canvas
   const handleAddApmReference = (apmItem: typeof APM_CATALOG[0]) => {
     const spawnedId = `node-apm-ref-${Date.now()}`;
+    
+    // Get creator metadata
+    const userJson = localStorage.getItem("labb_user");
+    const user = userJson ? JSON.parse(userJson) : { name: "Gäst", email: "labb@forefront.se" };
+    const creatorName = user.name || "Gäst";
+    const creationTime = new Date().toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" });
+
     const newNode: Node = {
       id: spawnedId,
       type: "apmRefNode",
       position: { x: 100 + Math.random() * 150, y: 100 + Math.random() * 150 },
-      data: { label: apmItem.name, tempo: apmItem.tempo, criticality: apmItem.criticality }
+      data: { 
+        label: apmItem.name, 
+        tempo: apmItem.tempo, 
+        criticality: apmItem.criticality,
+        createdBy: creatorName,
+        createdAt: creationTime
+      }
     };
     setNodes((nds) => [...nds, newNode]);
     if (yjsNodes) {
@@ -2557,11 +2616,82 @@ function EaStudioAppContent() {
               top: nodeContextMenu.y,
               zIndex: 10000,
             }}
-            className="bg-slate-900/95 border border-slate-800 backdrop-blur rounded-xl p-1.5 shadow-2xl w-44 animate-fadeIn select-none font-sans text-xs"
+            className="bg-slate-900/95 border border-slate-800 backdrop-blur rounded-xl p-1.5 shadow-2xl w-48 animate-fadeIn select-none font-sans text-xs space-y-0.5"
           >
+            <div className="px-2.5 py-1 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-850/60 pb-1.5 mb-1 flex justify-between items-center">
+              <span>Element</span>
+              <span className="text-[8px] bg-slate-950 px-1 py-0.5 rounded font-mono border border-slate-800">{nodes.find(n => n.id === nodeContextMenu.id)?.type?.substring(0, 8)}</span>
+            </div>
+
+            {/* View History Button */}
+            <button
+              onClick={() => setHistoryNodeId(nodeContextMenu.id)}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800/80 font-bold flex items-center gap-2 transition-all"
+            >
+              {/* Info Icon */}
+              <svg className="w-3.5 h-3.5 text-purple-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>Visa skapardetaljer</span>
+            </button>
+
+            {/* Layering section */}
+            <div className="px-2.5 py-1 text-[9px] font-black text-slate-500 uppercase tracking-widest border-t border-slate-850/60 pt-1.5 mt-1">
+              Skiktning
+            </div>
+
+            {/* Bring to front */}
+            <button
+              onClick={() => handleUpdateNodeZIndex(nodeContextMenu.id, "front")}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800/80 font-semibold flex items-center gap-2 transition-all"
+            >
+              <svg className="w-3.5 h-3.5 text-purple-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
+              <span>Flytta längst fram</span>
+            </button>
+
+            {/* Bring forward */}
+            <button
+              onClick={() => handleUpdateNodeZIndex(nodeContextMenu.id, "forward")}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800/80 font-semibold flex items-center gap-2 transition-all"
+            >
+              <svg className="w-3.5 h-3.5 text-purple-400/70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
+              <span>Flytta framåt</span>
+            </button>
+
+            {/* Send backward */}
+            <button
+              onClick={() => handleUpdateNodeZIndex(nodeContextMenu.id, "backward")}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800/80 font-semibold flex items-center gap-2 transition-all"
+            >
+              <svg className="w-3.5 h-3.5 text-slate-500/70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              <span>Flytta bakåt</span>
+            </button>
+
+            {/* Send to back */}
+            <button
+              onClick={() => handleUpdateNodeZIndex(nodeContextMenu.id, "back")}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800/80 font-semibold flex items-center gap-2 transition-all"
+            >
+              <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              <span>Skicka längst bak</span>
+            </button>
+
+            {/* Delete section divider */}
+            <div className="border-t border-slate-850/60 my-1"></div>
+
             <button
               onClick={() => handleDeleteNodeById(nodeContextMenu.id)}
-              className="w-full text-left px-3 py-2 rounded-lg text-rose-400 hover:bg-rose-500/10 font-bold flex items-center gap-2 transition-all"
+              className="w-full text-left px-2.5 py-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 font-bold flex items-center gap-2 transition-all"
             >
               {/* Inline SVG Trash Icon */}
               <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2571,6 +2701,42 @@ function EaStudioAppContent() {
                 <line x1="14" y1="11" x2="14" y2="17" />
               </svg>
               <span>Ta bort element</span>
+            </button>
+          </div>
+        )}
+
+        {/* Floating Creator Details Card */}
+        {historyNodeId && (
+          <div
+            style={{
+              position: "absolute",
+              left: nodeContextMenu ? nodeContextMenu.x + 200 : 350,
+              top: nodeContextMenu ? nodeContextMenu.y : 180,
+              zIndex: 10001,
+            }}
+            className="bg-slate-900 border border-slate-800 backdrop-blur rounded-xl p-3 shadow-2xl w-52 animate-fadeIn select-none font-sans text-xs space-y-2 border-l-4 border-l-purple-500"
+          >
+            <div className="flex items-center gap-1.5 border-b border-slate-800 pb-1.5 mb-1.5">
+              <svg className="w-3.5 h-3.5 text-purple-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span className="font-extrabold text-white text-[11px]">Skapardetaljer</span>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Skapad av</div>
+              <div className="text-xs text-white font-bold">{nodes.find(n => n.id === historyNodeId)?.data?.createdBy || "System-initial"}</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tidpunkt</div>
+              <div className="text-[11px] text-slate-300 font-medium font-mono">{nodes.find(n => n.id === historyNodeId)?.data?.createdAt || "2026-10-06 12:00"}</div>
+            </div>
+            <button
+              onClick={() => setHistoryNodeId(null)}
+              className="w-full text-center py-1 rounded bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-white border border-slate-850 text-[10px] font-bold mt-1.5 transition-all"
+            >
+              Stäng info
             </button>
           </div>
         )}
