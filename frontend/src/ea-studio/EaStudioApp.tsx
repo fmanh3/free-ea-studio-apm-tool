@@ -819,6 +819,19 @@ function EaStudioAppContent() {
             });
           }
         }
+        if (c.type === "dimensions" && c.dimensions) {
+          const current = yjsNodes.get(c.id);
+          if (current) {
+            yjsNodes.set(c.id, {
+              ...current,
+              style: {
+                ...current.style,
+                width: c.dimensions.width,
+                height: c.dimensions.height
+              }
+            });
+          }
+        }
         if (c.type === "remove") {
           yjsNodes.delete(c.id);
         }
