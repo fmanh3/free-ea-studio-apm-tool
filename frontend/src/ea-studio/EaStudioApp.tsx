@@ -741,6 +741,43 @@ interface ViewPage {
   edges: Edge[];
 }
 
+const sanitizeNodeForYjs = (n: any) => {
+  return {
+    id: n.id,
+    type: n.type,
+    position: {
+      x: n.position?.x ?? 0,
+      y: n.position?.y ?? 0
+    },
+    data: {
+      label: n.data?.label ?? "",
+      description: n.data?.description ?? "",
+      color: n.data?.color,
+      tint: n.data?.tint ?? "default",
+      createdBy: n.data?.createdBy || "System-initial",
+      createdAt: n.data?.createdAt || "2026-10-06 12:00",
+      tempo: n.data?.tempo,
+      criticality: n.data?.criticality
+    },
+    ...(n.style ? { style: { ...n.style } } : {})
+  };
+};
+
+const sanitizeEdgeForYjs = (e: any) => {
+  return {
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    animated: e.animated,
+    markerEnd: e.markerEnd,
+    markerStart: e.markerStart,
+    style: e.style,
+    label: e.label,
+    labelStyle: e.labelStyle,
+    labelBgStyle: e.labelBgStyle
+  };
+};
+
 function EaStudioAppContent() {
   // --- STATE-DECLARATIONS ---
   const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([]);
@@ -824,7 +861,7 @@ function EaStudioAppContent() {
       if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
-            yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
+            yjsNodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
       }
@@ -833,23 +870,23 @@ function EaStudioAppContent() {
         if (c.type === "position" && c.position) {
           const current = yjsNodes.get(c.id);
           if (current) {
-            yjsNodes.set(c.id, JSON.parse(JSON.stringify({
+            yjsNodes.set(c.id, sanitizeNodeForYjs({
               ...current,
               position: c.position
-            })));
+            }));
           }
         }
         if (c.type === "dimensions" && c.dimensions) {
           const current = yjsNodes.get(c.id);
           if (current && (current.type === "groupNode" || current.type === "stickyNode")) {
-            yjsNodes.set(c.id, JSON.parse(JSON.stringify({
+            yjsNodes.set(c.id, sanitizeNodeForYjs({
               ...current,
               style: {
                 ...(current.style || {}),
                 width: c.dimensions.width,
                 height: c.dimensions.height
               }
-            })));
+            }));
           }
         }
         if (c.type === "remove") {
@@ -866,7 +903,7 @@ function EaStudioAppContent() {
       if (edgesRef.current.length > 0) {
         edgesRef.current.forEach(e => {
           if (!yjsEdges.has(e.id)) {
-            yjsEdges.set(e.id, JSON.parse(JSON.stringify(e)));
+            yjsEdges.set(e.id, sanitizeEdgeForYjs(e));
           }
         });
       }
@@ -1065,14 +1102,14 @@ function EaStudioAppContent() {
       if (currentNodes.length > 0) {
         currentNodes.forEach(n => {
           if (!ynodes.has(n.id)) {
-            ynodes.set(n.id, JSON.parse(JSON.stringify(n)));
+            ynodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
       }
       if (currentEdges.length > 0) {
         currentEdges.forEach(e => {
           if (!yedges.has(e.id)) {
-            yedges.set(e.id, JSON.parse(JSON.stringify(e)));
+            yedges.set(e.id, sanitizeEdgeForYjs(e));
           }
         });
       }
@@ -1647,11 +1684,11 @@ function EaStudioAppContent() {
       if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
-            yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
+            yjsNodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
       }
-      yjsNodes.set(spawnedId, JSON.parse(JSON.stringify(spawnedNode)));
+      yjsNodes.set(spawnedId, sanitizeNodeForYjs(spawnedNode));
     }
     
     // Automatically select the node so they can type immediately on the canvas!
@@ -1687,11 +1724,11 @@ function EaStudioAppContent() {
       if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
-            yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
+            yjsNodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
       }
-      yjsNodes.set(spawnedId, JSON.parse(JSON.stringify(newNode)));
+      yjsNodes.set(spawnedId, sanitizeNodeForYjs(newNode));
     }
   };
 
