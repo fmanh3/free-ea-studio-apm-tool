@@ -1,5 +1,11 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
+
+const getApiUrl = (path: string) => {
+  const isDev = window.location.hostname === "localhost" && window.location.port !== "8080";
+  const base = isDev ? "http://localhost:8080" : "";
+  return `${base}${path}`;
+};
 
 // ==================== INLINE SVG ICONS (OneDrive Bypass) ====================
 const Network = ({ className = "w-4 h-4" }) => (
@@ -471,6 +477,8 @@ export default function ApmLensApp() {
   const [activeTab, setActiveTab] = useState<"seams" | "catalog" | "lifecycle" | "scenarios" | "wardley">("seams");
   const [selectedWardleyNodeId, setSelectedWardleyNodeId] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<string>("SÖM-01");
+  const [timeFilter, setTimeFilter] = useState<string>("ALL");
+  const [lifecycleViewMode, setLifecycleViewMode] = useState<"board" | "timeline">("board");
   
   // AI Copilot state
   const [chatHistory, setChatHistory] = useState<Array<{ sender: "user" | "ai"; text: string; query?: string }>>([
@@ -536,6 +544,34 @@ export default function ApmLensApp() {
   // Decoupled Graph State (Supporting CRUD)
   const [nodes, setNodes] = useState<EANode[]>(SEEDED_NODES);
   const [edges, setEdges] = useState<EAEdge[]>(SEEDED_EDGES);
+
+  useEffect(() => {
+    const fetchGraphData = async () => {
+      try {
+        const token = localStorage.getItem("auth_token") || "";
+        const headers = {
+          "Authorization": `Bearer ${token}`
+        };
+        const [resNodes, resEdges] = await Promise.all([
+          fetch(getApiUrl("/api/graph/nodes"), { headers }),
+          fetch(getApiUrl("/api/graph/edges"), { headers })
+        ]);
+        if (resNodes.ok && resEdges.ok) {
+          const fetchedNodes = await resNodes.json();
+          const fetchedEdges = await resEdges.json();
+          if (fetchedNodes.length > 0) {
+            setNodes(fetchedNodes);
+          }
+          if (fetchedEdges.length > 0) {
+            setEdges(fetchedEdges);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load graph data from backend, using local seeder fallback", err);
+      }
+    };
+    fetchGraphData();
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [copilotQuery, setCopilotQuery] = useState("");
@@ -816,9 +852,15 @@ export default function ApmLensApp() {
   };
 
   // CRUD Actions: Create and Update
-  const handleSaveNode = (e: React.FormEvent) => {
+  const handleSaveNode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingNode || !editingNode.name) return;
+
+    const token = localStorage.getItem("auth_token") || "";
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    };
 
     if (editingNode.id) {
       setNodes(prev => prev.map(n => n.id === editingNode.id ? (editingNode as EANode) : n));
@@ -826,6 +868,15 @@ export default function ApmLensApp() {
         ...prev,
         { sender: "ai", text: `Tillgång uppdaterad i katalogen: ${editingNode.name} (${editingNode.type}).` }
       ]);
+      try {
+        await fetch(getApiUrl("/api/graph/nodes"), {
+          method: "POST",
+          headers,
+          body: JSON.stringify(editingNode)
+        });
+      } catch (err) {
+        console.error("Failed to persist node update to backend", err);
+      }
     } else {
       const newNode: EANode = {
         ...(editingNode as EANode),
@@ -838,12 +889,21 @@ export default function ApmLensApp() {
         ...prev,
         { sender: "ai", text: `Ny tillgång skapad i katalogen: ${newNode.name} (${newNode.type}).` }
       ]);
+      try {
+        await fetch(getApiUrl("/api/graph/nodes"), {
+          method: "POST",
+          headers,
+          body: JSON.stringify(newNode)
+        });
+      } catch (err) {
+        console.error("Failed to persist node creation to backend", err);
+      }
     }
     setEditingNode(null);
   };
 
   // CRUD Actions: Delete with Cascade Edge Cleaning
-  const handleDeleteNode = (nodeId: string) => {
+  const handleDeleteNode = async (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
@@ -854,6 +914,15 @@ export default function ApmLensApp() {
         ...prev,
         { sender: "ai", text: `Tillgång raderad (Cascade-delete slutförd): ${node.name}.` }
       ]);
+      try {
+        const token = localStorage.getItem("auth_token") || "";
+        await fetch(getApiUrl(`/api/graph/nodes/${nodeId}`), {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+      } catch (err) {
+        console.error("Failed to persist node deletion to backend", err);
+      }
     }
   };
 
@@ -1491,13 +1560,22 @@ export default function ApmLensApp() {
                                 </td>
                                 <td className="py-3 px-3 text-center">
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
                                       if (confirm(`Är du säker på att du vill ta bort den här kopplingen?`)) {
                                         setEdges(prev => prev.filter(e => e.id !== edge.id));
                                         setChatHistory(prev => [
                                           ...prev,
                                           { sender: "ai", text: `Koppling borttagen: [${src.name}] -${edge.type}-> [${tgt.name}].` }
                                         ]);
+                                        try {
+                                          const token = localStorage.getItem("auth_token") || "";
+                                          await fetch(getApiUrl(`/api/graph/edges/${edge.id}`), {
+                                            method: "DELETE",
+                                            headers: { "Authorization": `Bearer ${token}` }
+                                          });
+                                        } catch (err) {
+                                          console.error("Failed to persist edge deletion to backend", err);
+                                        }
                                       }
                                     }}
                                     className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-slate-800 transition-colors"
@@ -1515,7 +1593,7 @@ export default function ApmLensApp() {
 
                   {/* Right: Create Connection Form */}
                   <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-md flex flex-col justify-between">
-                    <form onSubmit={(e) => {
+                    <form onSubmit={async (e) => {
                       e.preventDefault();
                       if (!newEdgeSourceId || !newEdgeTargetId) return;
                       const newEdge: EAEdge = {
@@ -1536,6 +1614,20 @@ export default function ApmLensApp() {
                       setNewEdgeSourceId("");
                       setNewEdgeTargetId("");
                       setNewEdgeContract("");
+
+                      try {
+                        const token = localStorage.getItem("auth_token") || "";
+                        await fetch(getApiUrl("/api/graph/edges"), {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}`
+                          },
+                          body: JSON.stringify(newEdge)
+                        });
+                      } catch (err) {
+                        console.error("Failed to persist edge creation to backend", err);
+                      }
                     }} className="space-y-4">
                       <div className="border-b border-slate-800 pb-2">
                         <span className="text-[9px] text-purple-400 font-extrabold uppercase tracking-widest block">Koppla noder</span>
@@ -1812,19 +1904,31 @@ export default function ApmLensApp() {
                       </div>
 
                       {/* Adaptive input schemas based on EA Object Type */}
-                      {selectedCatalogType === "Applikation" && (
+                      {(selectedCatalogType === "Applikation" || selectedCatalogType === "System") && (
                         <>
                           <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Faktiskt Tempo (&tau;)</label>
-                              <input
-                                type="number"
-                                required
-                                value={editingNode.tempo || 1}
-                                onChange={e => setEditingNode(prev => ({ ...prev, tempo: Number(e.target.value) }))}
-                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white font-mono"
-                              />
-                            </div>
+                            {selectedCatalogType === "Applikation" ? (
+                              <div>
+                                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Faktiskt Tempo (&tau;)</label>
+                                <input
+                                  type="number"
+                                  required
+                                  value={editingNode.tempo || 1}
+                                  onChange={e => setEditingNode(prev => ({ ...prev, tempo: Number(e.target.value) }))}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white font-mono"
+                                />
+                              </div>
+                            ) : (
+                              <div>
+                                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Objekttyp</label>
+                                <input
+                                  type="text"
+                                  disabled
+                                  value="System (Logisk Grupp)"
+                                  className="w-full bg-slate-950/50 border border-slate-800/80 rounded p-2 text-slate-500 text-xs font-bold"
+                                />
+                              </div>
+                            )}
                             <div>
                               <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Kritikalitet</label>
                               <select
@@ -1853,6 +1957,20 @@ export default function ApmLensApp() {
                                 <option value="Low">Low</option>
                               </select>
                             </div>
+                            <div>
+                              <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Arkitektur-status</label>
+                              <select
+                                value={editingNode.state || "AsIs"}
+                                onChange={e => setEditingNode(prev => ({ ...prev, state: e.target.value }))}
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white"
+                              >
+                                <option value="AsIs">AsIs (Befintligt Bestånd)</option>
+                                <option value="Transition">Transition (Övergångsfas)</option>
+                                <option value="Target">Target (Målarkitektur)</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
                             <div>
                               <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">TIME Åtgärd</label>
                               <select
@@ -2224,6 +2342,324 @@ export default function ApmLensApp() {
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {selectedQuestion === "A1-02" && (
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-md space-y-6">
+                  {/* Title & Controls */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+                    <div>
+                      <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider block mb-1">Målarkitektur & Evolution</span>
+                      <h3 className="text-base font-extrabold text-white">Livscykel & Portföljåtgärder (TIME)</h3>
+                      <p className="text-xs text-slate-400 mt-1">Styr och visualisera livscykel-övergångar från nuvarande till framtida målarkitektur.</p>
+                    </div>
+
+                    {/* View Mode Toggle */}
+                    <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 select-none">
+                      <button
+                        onClick={() => setLifecycleViewMode("board")}
+                        className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 ${
+                          lifecycleViewMode === "board"
+                            ? "bg-purple-600 text-white shadow"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <Columns className="w-3.5 h-3.5" />
+                        <span>Kanban-gruppering</span>
+                      </button>
+                      <button
+                        onClick={() => setLifecycleViewMode("timeline")}
+                        className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 ${
+                          lifecycleViewMode === "timeline"
+                            ? "bg-purple-600 text-white shadow"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        <span>TIME-Tidslinje</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter bar */}
+                  <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 mr-2 tracking-wider">Filtrera på TIME-åtgärd:</span>
+                    {["ALL", "Tolerate", "Invest", "Migrate", "Eliminate"].map(act => (
+                      <button
+                        key={act}
+                        onClick={() => setTimeFilter(act)}
+                        className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                          timeFilter === act
+                            ? "bg-purple-500/15 border-purple-500 text-purple-200"
+                            : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-300"
+                        }`}
+                      >
+                        {act === "ALL" ? "Visa alla" : act}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Vyer */}
+                  {lifecycleViewMode === "board" ? (
+                    /* board VIEW (3 swimlanes for ArchitectureState) */
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      
+                      {/* AS-IS COLUMN */}
+                      <div className="bg-slate-950/40 rounded-xl border border-slate-800/80 p-4 space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">As-Is (Befintligt Bestånd)</span>
+                          </div>
+                          <span className="text-[10px] bg-slate-900 text-slate-500 px-2 py-0.5 rounded font-mono font-bold">
+                            {nodes.filter(n => (n.type === "Applikation" || n.type === "System") && (n.state || "AsIs") === "AsIs" && (timeFilter === "ALL" || n.action === timeFilter)).length}
+                          </span>
+                        </div>
+                        <div className="space-y-2.5 max-h-[400px] overflow-y-auto pr-1">
+                          {nodes
+                            .filter(n => (n.type === "Applikation" || n.type === "System") && (n.state || "AsIs") === "AsIs" && (timeFilter === "ALL" || n.action === timeFilter))
+                            .map(n => (
+                              <div key={n.id} className="bg-slate-900/80 hover:bg-slate-900 p-3.5 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-all space-y-3">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div>
+                                    <h5 className="text-xs font-bold text-white">{n.name}</h5>
+                                    <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">{n.type}</span>
+                                  </div>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border ${
+                                    n.action === "Eliminate" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" :
+                                    n.action === "Migrate" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                    n.action === "Invest" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                                    "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                                  }`}>
+                                    {n.action || "Tolerate"}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2">{n.description}</p>
+                                <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-semibold text-slate-500">
+                                  {n.criticality && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400">Crit: {n.criticality}</span>
+                                  )}
+                                  {n.techDebt && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400">Skuld: {n.techDebt}</span>
+                                  )}
+                                  {n.tempo && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400 font-mono">&tau;: {n.tempo}m</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          {nodes.filter(n => (n.type === "Applikation" || n.type === "System") && (n.state || "AsIs") === "AsIs" && (timeFilter === "ALL" || n.action === timeFilter)).length === 0 && (
+                            <div className="text-center py-8 text-slate-600 text-[11px] italic">Inga tillgångar i denna fas matchar filtret.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* TRANSITION COLUMN */}
+                      <div className="bg-slate-950/40 rounded-xl border border-slate-800/80 p-4 space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Transition (Övergångsfas)</span>
+                          </div>
+                          <span className="text-[10px] bg-slate-900 text-slate-500 px-2 py-0.5 rounded font-mono font-bold">
+                            {nodes.filter(n => (n.type === "Applikation" || n.type === "System") && n.state === "Transition" && (timeFilter === "ALL" || n.action === timeFilter)).length}
+                          </span>
+                        </div>
+                        <div className="space-y-2.5 max-h-[400px] overflow-y-auto pr-1">
+                          {nodes
+                            .filter(n => (n.type === "Applikation" || n.type === "System") && n.state === "Transition" && (timeFilter === "ALL" || n.action === timeFilter))
+                            .map(n => (
+                              <div key={n.id} className="bg-slate-900/80 hover:bg-slate-900 p-3.5 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-all space-y-3">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div>
+                                    <h5 className="text-xs font-bold text-white">{n.name}</h5>
+                                    <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">{n.type}</span>
+                                  </div>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border ${
+                                    n.action === "Eliminate" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" :
+                                    n.action === "Migrate" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                    n.action === "Invest" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                                    "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                                  }`}>
+                                    {n.action || "Tolerate"}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2">{n.description}</p>
+                                <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-semibold text-slate-500">
+                                  {n.criticality && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400">Crit: {n.criticality}</span>
+                                  )}
+                                  {n.techDebt && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400">Skuld: {n.techDebt}</span>
+                                  )}
+                                  {n.tempo && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400 font-mono">&tau;: {n.tempo}m</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          {nodes.filter(n => (n.type === "Applikation" || n.type === "System") && n.state === "Transition" && (timeFilter === "ALL" || n.action === timeFilter)).length === 0 && (
+                            <div className="text-center py-8 text-slate-600 text-[11px] italic">Inga tillgångar i denna fas matchar filtret.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* TARGET COLUMN */}
+                      <div className="bg-slate-950/40 rounded-xl border border-slate-800/80 p-4 space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Target (Målarkitektur)</span>
+                          </div>
+                          <span className="text-[10px] bg-slate-900 text-slate-500 px-2 py-0.5 rounded font-mono font-bold">
+                            {nodes.filter(n => (n.type === "Applikation" || n.type === "System") && n.state === "Target" && (timeFilter === "ALL" || n.action === timeFilter)).length}
+                          </span>
+                        </div>
+                        <div className="space-y-2.5 max-h-[400px] overflow-y-auto pr-1">
+                          {nodes
+                            .filter(n => (n.type === "Applikation" || n.type === "System") && n.state === "Target" && (timeFilter === "ALL" || n.action === timeFilter))
+                            .map(n => (
+                              <div key={n.id} className="bg-slate-900/80 hover:bg-slate-900 p-3.5 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-all space-y-3">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div>
+                                    <h5 className="text-xs font-bold text-white">{n.name}</h5>
+                                    <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">{n.type}</span>
+                                  </div>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border ${
+                                    n.action === "Eliminate" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" :
+                                    n.action === "Migrate" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                    n.action === "Invest" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                                    "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                                  }`}>
+                                    {n.action || "Tolerate"}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2">{n.description}</p>
+                                <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-semibold text-slate-500">
+                                  {n.criticality && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400">Crit: {n.criticality}</span>
+                                  )}
+                                  {n.techDebt && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400">Skuld: {n.techDebt}</span>
+                                  )}
+                                  {n.tempo && (
+                                    <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800/80 text-slate-400 font-mono">&tau;: {n.tempo}m</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          {nodes.filter(n => (n.type === "Applikation" || n.type === "System") && n.state === "Target" && (timeFilter === "ALL" || n.action === timeFilter)).length === 0 && (
+                            <div className="text-center py-8 text-slate-600 text-[11px] italic">Inga tillgångar i denna fas matchar filtret.</div>
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  ) : (
+                    /* timeline VIEW (Gantt-inspired action timeline) */
+                    <div className="space-y-4">
+                      {/* Timeline Header Grid */}
+                      <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono border-b border-slate-800 pb-2">
+                        <div className="col-span-4 text-left pl-3">Arkitektur-Asset (System / App)</div>
+                        <div className="col-span-2 border-l border-slate-800/50">2026</div>
+                        <div className="col-span-2 border-l border-slate-800/50">2027</div>
+                        <div className="col-span-2 border-l border-slate-800/50">2028</div>
+                        <div className="col-span-2 border-l border-slate-800/50">2029+</div>
+                      </div>
+
+                      {/* Timeline Rows */}
+                      <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
+                        {nodes
+                          .filter(n => (n.type === "Applikation" || n.type === "System") && (timeFilter === "ALL" || n.action === timeFilter))
+                          .map(n => {
+                            const action = n.action || "Tolerate";
+                            const state = n.state || "AsIs";
+
+                            // Determine start and width of the timeline bar
+                            // Timeline total width is col-span-8. Let's map it visually.
+                            let barStyle = "";
+                            let phaseLabel = "";
+                            let barColorClass = "";
+
+                            if (state === "Target") {
+                              // Starts in mid 2027 (col-span-3 to col-span-12)
+                              barStyle = "col-start-8 col-span-5";
+                              phaseLabel = "Implementeras & Driftsätts";
+                              barColorClass = "bg-gradient-to-r from-emerald-600 to-teal-500 text-emerald-100 shadow-lg shadow-emerald-950/20 border border-emerald-500/20";
+                            } else if (action === "Eliminate") {
+                              // Sunsetted in mid 2027
+                              barStyle = "col-start-5 col-span-3";
+                              phaseLabel = "Aktiv Fas / Avveckling pågår";
+                              barColorClass = "bg-gradient-to-r from-rose-600/80 to-rose-700/40 text-rose-200 border border-rose-500/20";
+                            } else if (action === "Migrate") {
+                              // Migrated by end 2027
+                              barStyle = "col-start-5 col-span-4";
+                              phaseLabel = "Flyttfas / Ny lösning införs";
+                              barColorClass = "bg-gradient-to-r from-amber-600 to-orange-500 text-amber-100 border border-amber-500/20";
+                            } else if (action === "Tolerate") {
+                              // Steady state till mid 2028
+                              barStyle = "col-start-5 col-span-5";
+                              phaseLabel = "Tolererat driftsläge";
+                              barColorClass = "bg-gradient-to-r from-slate-700 to-slate-800 text-slate-300 border border-slate-700/50";
+                            } else if (action === "Invest") {
+                              // Growing strategic asset till 2029+
+                              barStyle = "col-start-5 col-span-8";
+                              phaseLabel = "Strategisk Investering & Livskraft";
+                              barColorClass = "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/20 border border-purple-500/20";
+                            }
+
+                            return (
+                              <div key={n.id} className="grid grid-cols-12 gap-2 items-center bg-slate-950/30 hover:bg-slate-900/40 p-2 rounded-lg border border-slate-800/40 hover:border-slate-800 transition-all">
+                                <div className="col-span-4 pl-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-bold text-white truncate">{n.name}</span>
+                                    <span className="text-[8px] font-bold bg-slate-900 border border-slate-800 text-slate-500 px-1 py-0.5 rounded font-mono">{n.type.substring(0, 3)}</span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 flex gap-2 mt-0.5">
+                                    <span>Skuld: {n.techDebt || "Low"}</span>
+                                    <span>&bull;</span>
+                                    <span>{state}</span>
+                                  </span>
+                                </div>
+
+                                <div className="col-span-8 grid grid-cols-8 gap-1 h-7 relative items-center">
+                                  {/* Grid background markers */}
+                                  <div className="absolute inset-0 grid grid-cols-4 pointer-events-none">
+                                    <div className="border-r border-slate-800/40 h-full col-span-1"></div>
+                                    <div className="border-r border-slate-800/40 h-full col-span-1"></div>
+                                    <div className="border-r border-slate-800/40 h-full col-span-1"></div>
+                                    <div className="h-full col-span-1"></div>
+                                  </div>
+
+                                  {/* Timeline bar */}
+                                  <div className={`h-6 rounded-md flex items-center justify-between px-2 text-[9px] font-bold tracking-wide leading-none ${barStyle} ${barColorClass}`}>
+                                    <span className="truncate">{phaseLabel}</span>
+                                    <span className="text-[8px] opacity-75 font-mono uppercase tracking-wider">{action}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        {nodes.filter(n => (n.type === "Applikation" || n.type === "System") && (timeFilter === "ALL" || n.action === timeFilter)).length === 0 && (
+                          <div className="text-center py-12 text-slate-600 text-[11px] italic">Inga tillgångar matchar filtret.</div>
+                        )}
+                      </div>
+
+                      {/* Info footer */}
+                      <div className="bg-slate-950/20 p-3 rounded-lg border border-slate-800/50 flex items-center gap-3 text-[11px] text-slate-400">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>
+                          <strong>Målsättning (Target Architecture):</strong> Denna tidslinje är automatgenererad baserad på dekopplade dataegenskaper (TIME-åtgärder och Arkitektur-status). När du ändrar en tillgångs status i CRUD-katalogen uppdateras tidslinjen omedelbart!
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

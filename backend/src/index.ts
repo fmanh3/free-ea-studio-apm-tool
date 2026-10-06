@@ -456,6 +456,458 @@ app.post("/api/scenarios/:scenarioId/decide", async (req, res) => {
   });
 });
 
+// ==================== NEO4J GRAPH DB ENDPOINTS ====================
+
+interface EANode {
+  id: string;
+  type: string;
+  name: string;
+  description: string;
+  tempo?: number;
+  criticality?: string;
+  techDebt?: string;
+  state?: string;
+  action?: string;
+  security?: string;
+  ownerTeamId?: string;
+  vendorId?: string;
+  gdpr?: boolean;
+  slaAvailability?: string;
+  contractUrl?: string;
+}
+
+interface EAEdge {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  type: string;
+  coupling?: number;
+  kontrakt?: string;
+  drag?: string;
+}
+
+const generateDecoupledLandscape = () => {
+  const seedNodes: EANode[] = [];
+  const seedEdges: EAEdge[] = [];
+
+  // Teams
+  const teams = ["Team Customer Portal", "Team Billing Hub", "Team Logistics Core", "Team Finance Ledger", "Team HR Master", "Team Security", "Team BI Analytics"];
+  teams.forEach((t, i) => {
+    seedNodes.push({ id: `team-${i}`, type: "Team", name: t, description: `Ansvarigt team för ${t.toLowerCase()} domänen.` });
+  });
+
+  // Vendors
+  const vendors = ["SAP AG", "Microsoft Corp", "Salesforce Inc", "Okta Inc", "Logistics Partners AB", "AWS Europe"];
+  vendors.forEach((v, i) => {
+    seedNodes.push({ id: `vendor-${i}`, type: "Leverantor", name: v, description: `Strategisk IT-leverantör för ${v}.`, contractUrl: "https://contracts.internal.org/ref" });
+  });
+
+  // Business Products
+  const businessProducts = [
+    { name: "Kundresekonsolidering", crit: "High" },
+    { name: "Automatisk Fakturering", crit: "Critical" },
+    { name: "Lagertransparens", crit: "High" },
+    { name: "Finansiell Bokslutskonsolidering", crit: "Critical" },
+    { name: "Medarbetarresa & Löner", crit: "Medium" },
+    { name: "Säker Identitetsverifiering", crit: "Critical" },
+    { name: "Affärsanalys & Prediktion", crit: "Low" }
+  ];
+  businessProducts.forEach((bp, i) => {
+    seedNodes.push({
+      id: `vp-${i}`,
+      type: "Verksamhetsprodukt",
+      name: bp.name,
+      description: `Verksamhetsprodukt som stödjer ${bp.name.toLowerCase()} förmågan.`,
+      criticality: bp.crit
+    });
+  });
+
+  // Products
+  const commercialProducts = [
+    { name: "Salesforce Customer Cloud", vendor: "vendor-2", sla: "99.9%" },
+    { name: "SAP ERP License Pack", vendor: "vendor-0", sla: "99.95%" },
+    { name: "Azure Container Suite", vendor: "vendor-1", sla: "99.99%" },
+    { name: "Okta Identity API Standard", vendor: "vendor-3", sla: "99.99%" },
+    { name: "Microsoft 365 Enterprise", vendor: "vendor-1", sla: "99.5%" }
+  ];
+  commercialProducts.forEach((cp, i) => {
+    seedNodes.push({
+      id: `prod-${i}`,
+      type: "Produkt",
+      name: cp.name,
+      description: `Kommersiell produktlicens för ${cp.name}.`,
+      vendorId: cp.vendor,
+      slaAvailability: cp.sla,
+      contractUrl: "https://procurement.internal.org/ref"
+    });
+    seedEdges.push({ id: `edge-prod-sup-${i}`, sourceId: `prod-${i}`, targetId: cp.vendor, type: "SUPPLIED_BY" });
+  });
+
+  // Systems
+  const systems = ["Mina Sidor Portal", "Kundreskontra System", "Utbetalningsmotor Core", "Lönehantering ERP", "Säkerhetsboxen", "Rapportering BI"];
+  systems.forEach((sys, i) => {
+    seedNodes.push({
+      id: `sys-${i}`,
+      type: "System",
+      name: sys,
+      description: `Logiskt förvaltat system som grupperar ${sys.toLowerCase()} applikationer.`,
+      state: "AsIs",
+      ownerTeamId: `team-${i % teams.length}`
+    });
+    seedEdges.push({ id: `edge-sys-team-${i}`, sourceId: `sys-${i}`, targetId: `team-${i % teams.length}`, type: "OWNED_BY" });
+  });
+
+  // Applications
+  const applikationer = [
+    { name: "Customer Web Portal", tempo: 1, sys: "sys-0", vp: "vp-0", debt: "Low", crit: "High" },
+    { name: "Mobile Client Frontend", tempo: 1, sys: "sys-0", vp: "vp-0", debt: "Low", crit: "High" },
+    { name: "Payment Broker Gateway", tempo: 6, sys: "sys-2", vp: "vp-1", debt: "Medium", crit: "Critical" },
+    { name: "SAP Invoice Scheduler", tempo: 24, sys: "sys-1", vp: "vp-1", debt: "High", crit: "Critical" },
+    { name: "Mainframe Billing Engine", tempo: 60, sys: "sys-2", vp: "vp-3", debt: "Critical", crit: "Critical" },
+    { name: "Logistics API Router", tempo: 12, sys: "sys-2", vp: "vp-2", debt: "Low", crit: "High" },
+    { name: "Okta OAuth Adapter", tempo: 6, sys: "sys-4", vp: "vp-5", debt: "Low", crit: "Critical" },
+    { name: "PowerBI ETL Worker", tempo: 12, sys: "sys-5", vp: "vp-6", debt: "Medium", crit: "Low" }
+  ];
+  applikationer.forEach((app, i) => {
+    const appId = `app-${i}`;
+    seedNodes.push({
+      id: appId,
+      type: "Applikation",
+      name: app.name,
+      description: `Körbar driftsatt container/tjänst för ${app.name.toLowerCase()}.`,
+      tempo: app.tempo,
+      criticality: app.crit,
+      techDebt: app.debt,
+      state: "AsIs",
+      action: app.debt === "Critical" ? "Eliminate" : "Invest"
+    });
+    seedEdges.push({ id: `edge-app-sys-${i}`, sourceId: appId, targetId: app.sys, type: "BELONGS_TO" });
+    seedEdges.push({ id: `edge-app-vp-${i}`, sourceId: appId, targetId: app.vp, type: "REALISES" });
+  });
+
+  // Services
+  const services = [
+    { name: "REST customerProfileAPI", app: "app-0" },
+    { name: "gRPC processPaymentSync", app: "app-2" },
+    { name: "SOAP dispatchInvoice", app: "app-3" },
+    { name: "COBOL batchBillingQueue", app: "app-4" }
+  ];
+  services.forEach((s, i) => {
+    const sId = `srv-${i}`;
+    seedNodes.push({ id: sId, type: "Service", name: s.name, description: `Exponerad teknisk tjänst: ${s.name}.` });
+    seedEdges.push({ id: `edge-srv-app-${i}`, sourceId: sId, targetId: s.app, type: "BELONGS_TO" });
+  });
+
+  // Information
+  const informationNodes = [
+    { name: "Customer Profiles", appMaster: "app-0", gdpr: true, sec: "Confidential" },
+    { name: "Transaction Vault", appMaster: "app-4", gdpr: true, sec: "Restricted" },
+    { name: "Employee Ledger", appMaster: "app-2", gdpr: true, sec: "Confidential" },
+    { name: "System Access Audits", appMaster: "app-6", gdpr: false, sec: "Internal" }
+  ];
+  informationNodes.forEach((info, i) => {
+    const infoId = `info-${i}`;
+    seedNodes.push({
+      id: infoId,
+      type: "Information",
+      name: info.name,
+      description: `Logiskt informationslandskap för ${info.name.toLowerCase()}.`,
+      gdpr: info.gdpr,
+      security: info.sec
+    });
+    seedEdges.push({ id: `edge-info-app-${i}`, sourceId: infoId, targetId: info.appMaster, type: "MASTERED_BY" });
+  });
+
+  // Extra Integrates edges to showcase seams and shearing
+  const integrations = [
+    { src: "app-0", tgt: "app-2", coupling: 0.65, contract: "REST Call - Direct Coupling (Mina Sidor -> Betalningar)" },
+    { src: "app-2", tgt: "app-4", coupling: 0.45, contract: "Direct TCP Socket Connection (Betalningar -> Mainframe)" },
+    { src: "app-6", tgt: "app-0", coupling: 0.20, contract: "OAuth2 Token Validation Interface" }
+  ];
+  integrations.forEach((integ, i) => {
+    seedEdges.push({
+      id: `edge-integ-${i}`,
+      sourceId: integ.src,
+      targetId: integ.tgt,
+      type: "INTEGRATES",
+      coupling: integ.coupling,
+      kontrakt: integ.contract
+    });
+  });
+
+  return { nodes: seedNodes, edges: seedEdges };
+};
+
+const initialSeededData = generateDecoupledLandscape();
+let graphNodesDb: EANode[] = [...initialSeededData.nodes];
+let graphEdgesDb: EAEdge[] = [...initialSeededData.edges];
+
+// 1. Get Nodes
+app.get("/api/graph/nodes", async (req, res) => {
+  console.log(`[GET /api/graph/nodes] Request received. Neo4j active: ${!!driver}`);
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        const result = await session.run(`
+          MATCH (n)
+          RETURN n {.*, id: n.id, type: labels(n)[0]} AS node
+        `);
+        const list = result.records.map((row: any) => row.get("node"));
+        console.log(`[GET /api/graph/nodes] Neo4j returned ${list.length} nodes.`);
+        return res.json(list);
+      } finally {
+        await session.close();
+      }
+    }
+    console.log(`[GET /api/graph/nodes] Fallback returned ${graphNodesDb.length} nodes.`);
+    res.json(graphNodesDb);
+  } catch (err: any) {
+    console.error("[GET /api/graph/nodes] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Get Edges
+app.get("/api/graph/edges", async (req, res) => {
+  console.log(`[GET /api/graph/edges] Request received. Neo4j active: ${!!driver}`);
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        const result = await session.run(`
+          MATCH (s)-[r]->(t)
+          RETURN {
+            id: r.id, 
+            sourceId: s.id, 
+            targetId: t.id, 
+            type: type(r), 
+            coupling: r.coupling, 
+            kontrakt: r.kontrakt, 
+            drag: r.drag
+          } AS edge
+        `);
+        const list = result.records.map((row: any) => row.get("edge"));
+        console.log(`[GET /api/graph/edges] Neo4j returned ${list.length} edges.`);
+        return res.json(list);
+      } finally {
+        await session.close();
+      }
+    }
+    console.log(`[GET /api/graph/edges] Fallback returned ${graphEdgesDb.length} edges.`);
+    res.json(graphEdgesDb);
+  } catch (err: any) {
+    console.error("[GET /api/graph/edges] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Save Node
+app.post("/api/graph/nodes", async (req, res) => {
+  const node = req.body;
+  if (!node.id || !node.type || !node.name) {
+    return res.status(400).json({ error: "id, type och name saknas." });
+  }
+  console.log(`[POST /api/graph/nodes] Node: ${node.name} (${node.type}). Neo4j active: ${!!driver}`);
+
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        const { id, type, ...properties } = node;
+        const cleanType = type.replace(/[^a-zA-Z0-9_]/g, "");
+
+        await session.run(`
+          MERGE (n:${cleanType} {id: $id})
+          SET n = $properties
+          SET n.id = $id
+          RETURN n
+        `, { id, properties });
+        
+        console.log(`[POST /api/graph/nodes] Merged node in Neo4j: ${node.id}`);
+        return res.json(node);
+      } finally {
+        await session.close();
+      }
+    }
+
+    const idx = graphNodesDb.findIndex(n => n.id === node.id);
+    if (idx !== -1) {
+      graphNodesDb[idx] = node;
+    } else {
+      graphNodesDb.push(node);
+    }
+    res.json(node);
+  } catch (err: any) {
+    console.error("[POST /api/graph/nodes] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. Delete Node (Detach Delete)
+app.delete("/api/graph/nodes/:id", async (req, res) => {
+  const { id } = req.params;
+  console.log(`[DELETE /api/graph/nodes/${id}] Neo4j active: ${!!driver}`);
+
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        await session.run(`
+          MATCH (n {id: $id})
+          DETACH DELETE n
+        `, { id });
+        console.log(`[DELETE /api/graph/nodes] Detach deleted node in Neo4j: ${id}`);
+        return res.json({ success: true });
+      } finally {
+        await session.close();
+      }
+    }
+
+    graphNodesDb = graphNodesDb.filter(n => n.id !== id);
+    graphEdgesDb = graphEdgesDb.filter(e => e.sourceId !== id && e.targetId !== id);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[DELETE /api/graph/nodes] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. Save Edge
+app.post("/api/graph/edges", async (req, res) => {
+  const edge = req.body;
+  if (!edge.id || !edge.sourceId || !edge.targetId || !edge.type) {
+    return res.status(400).json({ error: "id, sourceId, targetId och type saknas." });
+  }
+  console.log(`[POST /api/graph/edges] Edge: ${edge.sourceId} -[${edge.type}]-> ${edge.targetId}. Neo4j active: ${!!driver}`);
+
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        const cleanType = edge.type.replace(/[^a-zA-Z0-9_]/g, "");
+        await session.run(`
+          MATCH (s {id: $sourceId})
+          MATCH (t {id: $targetId})
+          MERGE (s)-[r:${cleanType}]->(t)
+          SET r.id = $id
+          SET r.coupling = $coupling
+          SET r.kontrakt = $kontrakt
+          SET r.drag = $drag
+          RETURN r
+        `, {
+          sourceId: edge.sourceId,
+          targetId: edge.targetId,
+          id: edge.id,
+          coupling: edge.coupling || null,
+          kontrakt: edge.kontrakt || null,
+          drag: edge.drag || null
+        });
+        console.log(`[POST /api/graph/edges] Merged edge in Neo4j: ${edge.id}`);
+        return res.json(edge);
+      } finally {
+        await session.close();
+      }
+    }
+
+    const idx = graphEdgesDb.findIndex(e => e.id === edge.id);
+    if (idx !== -1) {
+      graphEdgesDb[idx] = edge;
+    } else {
+      graphEdgesDb.push(edge);
+    }
+    res.json(edge);
+  } catch (err: any) {
+    console.error("[POST /api/graph/edges] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6. Delete Edge
+app.delete("/api/graph/edges/:id", async (req, res) => {
+  const { id } = req.params;
+  console.log(`[DELETE /api/graph/edges/${id}] Neo4j active: ${!!driver}`);
+
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        await session.run(`
+          MATCH ()-[r {id: $id}]->()
+          DELETE r
+        `, { id });
+        console.log(`[DELETE /api/graph/edges] Deleted edge in Neo4j: ${id}`);
+        return res.json({ success: true });
+      } finally {
+        await session.close();
+      }
+    }
+
+    graphEdgesDb = graphEdgesDb.filter(e => e.id !== id);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[DELETE /api/graph/edges] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. Seed Database (Clear and Seed Neo4j or Fallback)
+app.post("/api/graph/seed", async (req, res) => {
+  console.log(`[POST /api/graph/seed] Seeding database. Neo4j active: ${!!driver}`);
+  try {
+    const data = generateDecoupledLandscape();
+    if (driver) {
+      const session = driver.session();
+      try {
+        await session.run("MATCH (n) DETACH DELETE n");
+        console.log("[SEED] Neo4j database cleared.");
+
+        for (const n of data.nodes) {
+          const { id, type, ...properties } = n;
+          const cleanType = type.replace(/[^a-zA-Z0-9_]/g, "");
+          await session.run(`
+            MERGE (node:${cleanType} {id: $id})
+            SET node = $properties
+            SET node.id = $id
+          `, { id, properties });
+        }
+        console.log(`[SEED] Neo4j seeded with ${data.nodes.length} nodes.`);
+
+        for (const e of data.edges) {
+          const cleanType = e.type.replace(/[^a-zA-Z0-9_]/g, "");
+          await session.run(`
+            MATCH (s {id: $sourceId})
+            MATCH (t {id: $targetId})
+            MERGE (s)-[r:${cleanType}]->(t)
+            SET r.id = $id
+            SET r.coupling = $coupling
+            SET r.kontrakt = $kontrakt
+            SET r.drag = $drag
+          `, {
+            sourceId: e.sourceId,
+            targetId: e.targetId,
+            id: e.id,
+            coupling: e.coupling || null,
+            kontrakt: e.kontrakt || null,
+            drag: e.drag || null
+          });
+        }
+        console.log(`[SEED] Neo4j seeded with ${data.edges.length} edges.`);
+        return res.json({ success: true, message: `Neo4j databasen rensades och fylldes med ${data.nodes.length} noder och ${data.edges.length} relationer!` });
+      } finally {
+        await session.close();
+      }
+    }
+
+    graphNodesDb = [...data.nodes];
+    graphEdgesDb = [...data.edges];
+    res.json({ success: true, message: `Mock fallbacks rensades och fylldes med ${data.nodes.length} noder och ${data.edges.length} relationer!` });
+  } catch (err: any) {
+    console.error("[POST /api/graph/seed] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== WORKSPACE CATALOG ENDPOINTS ====================
 
 // 1. Folders Endpoints
