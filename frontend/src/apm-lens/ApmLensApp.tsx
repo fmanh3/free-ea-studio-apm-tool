@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
 
+// FORCE_VITE_CACHE_BUST: 2026-10-06-15-25-SSO-SCENARIO-DROPDOWN
 const getApiUrl = (path: string) => {
   const isDev = window.location.hostname === "localhost" && window.location.port !== "8080";
   const base = isDev ? "http://localhost:8080" : "";
