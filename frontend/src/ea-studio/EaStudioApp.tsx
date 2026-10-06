@@ -1068,20 +1068,19 @@ function EaStudioAppContent() {
     });
 
     // Synchronize remote changes into ReactFlow local state
-    const syncFromYjs = () => {
+    const syncNodesFromYjs = (event: any) => {
+      // CRITICAL: Prevent infinite loops by ignoring local transactions!
+      // Local changes are already applied in our local React state, so we only
+      // apply changes from remote peers (transaction.local === false).
+      if (event.transaction.local) return;
+
       const remoteNodes: Node[] = [];
       ynodes.forEach((val, id) => {
         const rawNode = val && typeof val.toJSON === "function" ? val.toJSON() : val;
         remoteNodes.push({ id, ...rawNode });
       });
 
-      const remoteEdges: Edge[] = [];
-      yedges.forEach((val, id) => {
-        const rawEdge = val && typeof val.toJSON === "function" ? val.toJSON() : val;
-        remoteEdges.push({ id, ...rawEdge });
-      });
-      
-      console.log(`[YJS SYNC] Received ${remoteNodes.length} nodes and ${remoteEdges.length} edges from Yjs. Local state nodes: ${nodesRef.current.length}`);
+      console.log(`[YJS SYNC NODES] Received ${remoteNodes.length} nodes from Yjs. Local state nodes: ${nodesRef.current.length}`);
 
       const parsedNodes = remoteNodes.map(n => ({
         id: n.id,
@@ -1090,6 +1089,23 @@ function EaStudioAppContent() {
         data: n.data,
         style: n.style
       }));
+
+      if (parsedNodes.length > 0) {
+        setNodes(parsedNodes);
+      }
+    };
+
+    const syncEdgesFromYjs = (event: any) => {
+      // CRITICAL: Prevent infinite loops by ignoring local transactions!
+      if (event.transaction.local) return;
+
+      const remoteEdges: Edge[] = [];
+      yedges.forEach((val, id) => {
+        const rawEdge = val && typeof val.toJSON === "function" ? val.toJSON() : val;
+        remoteEdges.push({ id, ...rawEdge });
+      });
+      
+      console.log(`[YJS SYNC EDGES] Received ${remoteEdges.length} edges from Yjs. Local state edges: ${edgesRef.current.length}`);
 
       const parsedEdges = remoteEdges.map(e => ({
         id: e.id,
@@ -1104,17 +1120,13 @@ function EaStudioAppContent() {
         labelBgStyle: e.labelBgStyle
       }));
 
-      // Avoid infinite cycles by only updating state if remote has data
-      if (parsedNodes.length > 0) {
-        setNodes(parsedNodes);
-      }
       if (parsedEdges.length > 0) {
         setEdges(parsedEdges);
       }
     };
 
-    ynodes.observe(syncFromYjs);
-    yedges.observe(syncFromYjs);
+    ynodes.observe(syncNodesFromYjs);
+    yedges.observe(syncEdgesFromYjs);
 
     setYjsNodes(ynodes);
     setYjsEdges(yedges);
