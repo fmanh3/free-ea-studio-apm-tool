@@ -1043,14 +1043,17 @@ function EaStudioAppContent() {
       const currentNodes = nodesRef.current;
       const currentEdges = edgesRef.current;
 
-      if (ynodes.size === 0 && currentNodes.length > 0) {
+      const ynodesEmpty = Array.from(ynodes.keys()).length === 0;
+      const yedgesEmpty = Array.from(yedges.keys()).length === 0;
+
+      if (ynodesEmpty && currentNodes.length > 0) {
         currentNodes.forEach(n => {
           if (!ynodes.has(n.id)) {
             ynodes.set(n.id, n);
           }
         });
       }
-      if (yedges.size === 0 && currentEdges.length > 0) {
+      if (yedgesEmpty && currentEdges.length > 0) {
         currentEdges.forEach(e => {
           if (!yedges.has(e.id)) {
             yedges.set(e.id, e);
