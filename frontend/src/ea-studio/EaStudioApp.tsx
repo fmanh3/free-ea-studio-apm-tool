@@ -821,11 +821,11 @@ function EaStudioAppContent() {
         }
         if (c.type === "dimensions" && c.dimensions) {
           const current = yjsNodes.get(c.id);
-          if (current) {
+          if (current && (current.type === "groupNode" || current.type === "stickyNode")) {
             yjsNodes.set(c.id, {
               ...current,
               style: {
-                ...current.style,
+                ...(current.style || {}),
                 width: c.dimensions.width,
                 height: c.dimensions.height
               }
