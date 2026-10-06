@@ -488,55 +488,122 @@ export default function ApmLensApp() {
     }
   ]);
   
-  // Transition Scenarios active state
-  const [activeScenario, setActiveScenario] = useState<any>({
-    id: "scen-1",
-    name: "Avveckling av Gamla Reskontran (COBOL Core)",
-    status: "Under utredning",
-    background: "Skatta spridningsrisk och klyvningskostnader för att migrera COBOL Core Billing till en modern molntjänst.",
-    affectedSystems: ["Mainframe Billing Engine", "Payment Broker Gateway"],
-    decisions: [{
-      criteria: [
-        { key: "crit-1", name: "Lågt Skjuvningsbetyg" },
-        { key: "crit-2", name: "Kostnad & Licenser" },
-        { key: "crit-3", name: "Säkerhet & GDPR" }
-      ],
-      alternatives: [
+  // Local fallback scenarios list
+  const fallbackScenarios = [
+    {
+      id: "sc-1",
+      name: "Betalningskonsolidering (Avveckling av Betalningsmotor)",
+      background: "Betalningsmotorn bär kritisk betalningshantering men har kritisk teknisk skuld. Vi måste hitta ett alternativ för att ersätta den innan 2027.",
+      status: "Under utredning",
+      affectedSystems: ["Betalningsmotor", "Gamla Reskontran"],
+      decisions: [
         {
-          id: "alt-1",
-          name: "Alternativ A: Totalmoln-klyvning",
-          isRecommended: true,
-          bedomningar: [
-            { criterionKey: "crit-1", score: 5, motivering: "Sänker skjuvningen till 0.10 permanent." },
-            { criterionKey: "crit-2", score: 2, motivering: "Hög initial utvecklingskostnad." },
-            { criterionKey: "crit-3", score: 5, motivering: "Säkrad Okta-autentisering." }
-          ]
-        },
-        {
-          id: "alt-2",
-          name: "Alternativ B: Tolerera & Wrapa (API)",
-          isRecommended: false,
-          bedomningar: [
-            { criterionKey: "crit-1", score: 3, motivering: "Tolererar tempoklyftan men frikopplar med API." },
-            { criterionKey: "crit-2", score: 4, motivering: "Låg kostnad på kort sikt." },
-            { criterionKey: "crit-3", score: 2, motivering: "Dold teknisk skuld kvarstår." }
+          id: "dec-1",
+          title: "Val av ny betalningsplattform",
+          question: "Hur bör vi ersätta den gamla Betalningsmotorn för att säkra prestanda och minimera den tekniska skulden?",
+          status: "Under utredning",
+          criteria: [
+            { key: "crit-1", name: "Mognadsgrad & Framtidssäkring" },
+            { key: "crit-2", name: "Integrationskomplexitet (Blast Radius)" },
+            { key: "crit-3", name: "GDPR & Personuppgiftssäkerhet" }
+          ],
+          alternatives: [
+            {
+              id: "alt-1",
+              name: "Alt A: Egenutvecklad mikrotjänst i Azure (CloudPay v2)",
+              isRecommended: true,
+              isApproved: false,
+              bedomningar: [
+                { criterionKey: "crit-1", score: 5, motivering: "Mycket framtidssäkert, helt på vår egen molnarkitektur." },
+                { criterionKey: "crit-2", score: 3, motivering: "Hög initial integrationskostnad eftersom vi måste återskapa alla gamla kopplingar." },
+                { criterionKey: "crit-3", score: 5, motivering: "Full kontroll över dataflöden, lätt att kryptera PII." }
+              ]
+            },
+            {
+              id: "alt-2",
+              name: "Alt B: Gå helt över till extern SaaS (SaaS-Pay)",
+              isRecommended: false,
+              isApproved: false,
+              bedomningar: [
+                { criterionKey: "crit-1", score: 4, motivering: "Stabil leverantör, men vi blir inlåsta i deras roadmap." },
+                { criterionKey: "crit-2", score: 4, motivering: "Färdiga API-connectorer finns, men begränsad flexibilitet." },
+                { criterionKey: "crit-3", score: 3, motivering: "Externa personuppgifter, kräver noggrant DPA-avtal." }
+              ]
+            }
           ]
         }
       ]
-    }]
-  });
+    }
+  ];
 
-  const handleCommitDecision = (altId: string) => {
+  const [scenariosList, setScenariosList] = useState<any[]>(fallbackScenarios);
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("sc-1");
+  const [activeScenario, setActiveScenario] = useState<any>(fallbackScenarios[0]);
+
+  // Load scenarios from backend
+  useEffect(() => {
+    const loadScenarios = async () => {
+      try {
+        const token = localStorage.getItem("labb_token") || "";
+        const res = await fetch(getApiUrl("/api/scenarios"), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const list = await res.json();
+          setScenariosList(list);
+          const found = list.find((s: any) => s.id === selectedScenarioId) || list[0];
+          setActiveScenario(found);
+        }
+      } catch (err) {
+        console.error("Failed to load scenarios from backend, using local fallback", err);
+      }
+    };
+    loadScenarios();
+  }, [selectedScenarioId]);
+
+  const handleCommitDecision = async (altId: string) => {
+    if (!activeScenario) return;
+    
+    const decision = activeScenario.decisions[0];
+    const alternative = decision.alternatives.find((a: any) => a.id === altId);
+    if (!alternative) return;
+
     setActiveScenario((prev: any) => ({
       ...prev,
       status: "Beslutat",
       decisions: [{
         ...prev.decisions[0],
-        alternatives: prev.decisions[0].alternatives.map((alt: any) => 
-          alt.id === altId ? { ...alt, isApproved: true } : alt
-        )
+        status: "Beslutat",
+        alternatives: prev.decisions[0].alternatives.map((alt: any) => ({
+          ...alt,
+          isApproved: alt.id === altId
+        }))
       }]
     }));
+
+    setChatHistory(prev => [
+      ...prev,
+      { sender: "user", text: `Fatta beslut: Jag väljer ${alternative.name}.` },
+      { sender: "ai", text: `Sömlöst beslut fattat! Alternativet "${alternative.name}" har markerats som det valda vägvalet i din GCP Firestore-databas. Jag uppdaterar även TIME-tidslinjen och skjuvningsberäkningarna i enlighet med detta beslut!` }
+    ]);
+
+    try {
+      const token = localStorage.getItem("labb_token") || "";
+      await fetch(getApiUrl(`/api/scenarios/${activeScenario.id}/decide`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          decisionId: decision.id,
+          alternativeId: altId,
+          deciderName: "Chefsarkitekt"
+        })
+      });
+    } catch (err) {
+      console.error("Failed to persist decision to backend", err);
+    }
   };
 
 
@@ -2668,6 +2735,25 @@ export default function ApmLensApp() {
           {/* TAB 3: TRANSITIONER & SCENARIER */}
           {activeTab === "scenarios" && activeScenario && (
             <div className="space-y-6 animate-fadeIn">
+              
+              {/* Scenario dropdown selection */}
+              {scenariosList.length > 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-400">Välj utrednings-scenario:</span>
+                    <select
+                      value={selectedScenarioId}
+                      onChange={e => setSelectedScenarioId(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-white outline-none focus:border-purple-500 font-bold"
+                    >
+                      {scenariosList.map((sc: any) => (
+                        <option key={sc.id} value={sc.id}>{sc.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono">Totalt {scenariosList.length} utredningsscenarier laddade från databasen</span>
+                </div>
+              )}
               
               {/* Scenario details */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-md">
