@@ -824,7 +824,7 @@ function EaStudioAppContent() {
       if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
-            yjsNodes.set(n.id, n);
+            yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
           }
         });
       }
@@ -833,23 +833,23 @@ function EaStudioAppContent() {
         if (c.type === "position" && c.position) {
           const current = yjsNodes.get(c.id);
           if (current) {
-            yjsNodes.set(c.id, {
+            yjsNodes.set(c.id, JSON.parse(JSON.stringify({
               ...current,
               position: c.position
-            });
+            })));
           }
         }
         if (c.type === "dimensions" && c.dimensions) {
           const current = yjsNodes.get(c.id);
           if (current && (current.type === "groupNode" || current.type === "stickyNode")) {
-            yjsNodes.set(c.id, {
+            yjsNodes.set(c.id, JSON.parse(JSON.stringify({
               ...current,
               style: {
                 ...(current.style || {}),
                 width: c.dimensions.width,
                 height: c.dimensions.height
               }
-            });
+            })));
           }
         }
         if (c.type === "remove") {
@@ -866,7 +866,7 @@ function EaStudioAppContent() {
       if (Array.from(yjsEdges.keys()).length === 0 && edgesRef.current.length > 0) {
         edgesRef.current.forEach(e => {
           if (!yjsEdges.has(e.id)) {
-            yjsEdges.set(e.id, e);
+            yjsEdges.set(e.id, JSON.parse(JSON.stringify(e)));
           }
         });
       }
@@ -1650,11 +1650,11 @@ function EaStudioAppContent() {
       if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
-            yjsNodes.set(n.id, n);
+            yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
           }
         });
       }
-      yjsNodes.set(spawnedId, spawnedNode);
+      yjsNodes.set(spawnedId, JSON.parse(JSON.stringify(spawnedNode)));
     }
     
     // Automatically select the node so they can type immediately on the canvas!
@@ -1690,11 +1690,11 @@ function EaStudioAppContent() {
       if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
-            yjsNodes.set(n.id, n);
+            yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
           }
         });
       }
-      yjsNodes.set(spawnedId, newNode);
+      yjsNodes.set(spawnedId, JSON.parse(JSON.stringify(newNode)));
     }
   };
 
