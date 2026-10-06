@@ -1070,12 +1070,14 @@ function EaStudioAppContent() {
     const syncFromYjs = () => {
       const remoteNodes: Node[] = [];
       ynodes.forEach((val, id) => {
-        remoteNodes.push({ id, ...val });
+        const rawNode = val && typeof val.toJSON === "function" ? val.toJSON() : val;
+        remoteNodes.push({ id, ...rawNode });
       });
 
       const remoteEdges: Edge[] = [];
       yedges.forEach((val, id) => {
-        remoteEdges.push({ id, ...id === activePageId ? val : val }); // dummy expression to satisfy ts compile of variables, but actually:
+        const rawEdge = val && typeof val.toJSON === "function" ? val.toJSON() : val;
+        remoteEdges.push({ id, ...rawEdge });
       });
       
       const parsedNodes = remoteNodes.map(n => ({

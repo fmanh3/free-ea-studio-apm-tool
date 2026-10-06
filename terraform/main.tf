@@ -111,6 +111,7 @@ resource "google_cloud_run_service" "free_apm_app" {
     metadata {
       annotations = {
         "autoscaling.knative.dev/minScale" = "0"
+        "run.googleapis.com/sessionAffinity" = "true"
       }
     }
   }
