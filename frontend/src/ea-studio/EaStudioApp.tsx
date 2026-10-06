@@ -651,12 +651,12 @@ const GroupNode = ({ id, selected, data }: NodeProps) => {
   const updateLabel = useNodeLabelUpdater(id);
 
   // Custom transparent tints for groups
-  const bgClass = data.tint === "pink" ? "bg-rose-500/5 border-rose-400/40 text-rose-200/90 hover:bg-rose-500/10" 
-                : data.tint === "blue" ? "bg-sky-500/5 border-sky-400/40 text-sky-200/90 hover:bg-sky-500/10"
-                : data.tint === "green" ? "bg-emerald-500/5 border-emerald-400/40 text-emerald-200/90 hover:bg-emerald-500/10"
-                : data.tint === "purple" ? "bg-violet-500/5 border-violet-400/40 text-violet-200/90 hover:bg-violet-500/10"
-                : data.tint === "yellow" ? "bg-amber-500/5 border-amber-400/40 text-amber-200/90 hover:bg-amber-500/10"
-                : "bg-slate-900/10 border-slate-700/50 text-slate-300 hover:bg-slate-900/20"; // default neutral transparent
+  const bgClass = data.tint === "pink" ? "bg-rose-500/10 border-rose-400/60 text-rose-200/90 hover:bg-rose-500/15" 
+                : data.tint === "blue" ? "bg-sky-500/10 border-sky-400/60 text-sky-200/90 hover:bg-sky-500/15"
+                : data.tint === "green" ? "bg-emerald-500/10 border-emerald-400/60 text-emerald-200/90 hover:bg-emerald-500/15"
+                : data.tint === "purple" ? "bg-violet-500/10 border-violet-400/60 text-violet-200/90 hover:bg-violet-500/15"
+                : data.tint === "yellow" ? "bg-amber-500/10 border-amber-400/60 text-amber-200/90 hover:bg-amber-500/15"
+                : "bg-slate-800/40 border-slate-500/80 text-slate-200 hover:bg-slate-800/50"; // default neutral transparent
 
   const inputTextColor = data.tint === "pink" ? "text-rose-200" 
                        : data.tint === "blue" ? "text-sky-200"
@@ -840,6 +840,7 @@ function EaStudioAppContent() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [nodeContextMenu, setNodeContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [showGuideModal, setShowGuideModal] = useState(false);
 
   // States only used for crafting NEW nodes (spawning fallback)
@@ -1328,6 +1329,47 @@ function EaStudioAppContent() {
     if (providerRef.current) {
       providerRef.current.awareness.setLocalStateField("cursor", null);
     }
+  };
+
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      event.preventDefault();
+      const pane = document.querySelector(".react-flow");
+      if (pane) {
+        const rect = pane.getBoundingClientRect();
+        setNodeContextMenu({
+          id: node.id,
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top
+        });
+      }
+    },
+    [setNodeContextMenu]
+  );
+
+  const onPaneClick = useCallback(() => {
+    setNodeContextMenu(null);
+  }, [setNodeContextMenu]);
+
+  const handleDeleteNodeById = (nodeId: string) => {
+    setNodes(nds => nds.filter(n => n.id !== nodeId));
+    setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
+
+    if (yjsNodes) {
+      yjsNodes.delete(nodeId);
+    }
+    if (yjsEdges) {
+      edges.forEach(e => {
+        if (e.source === nodeId || e.target === nodeId) {
+          yjsEdges.delete(e.id);
+        }
+      });
+    }
+
+    if (selectedNodeId === nodeId) {
+      setSelectedNodeId(null);
+    }
+    setNodeContextMenu(null);
   };
 
   const handleAddPage = () => {
@@ -2361,6 +2403,8 @@ function EaStudioAppContent() {
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onEdgeClick={onEdgeClick}
+          onNodeContextMenu={onNodeContextMenu}
+          onPaneClick={onPaneClick}
           nodeTypes={nodeTypes}
           snapToGrid={true}
           snapGrid={[15, 15]}
@@ -2410,6 +2454,33 @@ function EaStudioAppContent() {
             </div>
           </div>
         ))}
+
+        {/* Custom Right-Click Context Menu for Elements */}
+        {nodeContextMenu && (
+          <div
+            style={{
+              position: "absolute",
+              left: nodeContextMenu.x,
+              top: nodeContextMenu.y,
+              zIndex: 10000,
+            }}
+            className="bg-slate-900/95 border border-slate-800 backdrop-blur rounded-xl p-1.5 shadow-2xl w-44 animate-fadeIn select-none font-sans text-xs"
+          >
+            <button
+              onClick={() => handleDeleteNodeById(nodeContextMenu.id)}
+              className="w-full text-left px-3 py-2 rounded-lg text-rose-400 hover:bg-rose-500/10 font-bold flex items-center gap-2 transition-all"
+            >
+              {/* Inline SVG Trash Icon */}
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+              <span>Ta bort element</span>
+            </button>
+          </div>
+        )}
       </main>
 
       {/* ==================== RIGHT: INSPECTOR SIDEBAR ==================== */}
