@@ -1081,6 +1081,8 @@ function EaStudioAppContent() {
         remoteEdges.push({ id, ...rawEdge });
       });
       
+      console.log(`[YJS SYNC] Received ${remoteNodes.length} nodes and ${remoteEdges.length} edges from Yjs. Local state nodes: ${nodesRef.current.length}`);
+
       const parsedNodes = remoteNodes.map(n => ({
         id: n.id,
         type: n.type,
