@@ -1027,27 +1027,36 @@ function EaStudioAppContent() {
     setYjsNodes(ynodes);
     setYjsEdges(yedges);
 
-    // Auto-seed Yjs maps with local page state if the remote Yjs maps are empty on connection
-    provider.on("sync", (isSynced: boolean) => {
-      if (isSynced) {
-        if (ynodes.size === 0) {
-          setNodes(currentNodes => {
-            if (ynodes.size === 0 && currentNodes.length > 0) {
-              currentNodes.forEach(n => ynodes.set(n.id, n));
-            }
-            return currentNodes;
-          });
-        }
-        if (yedges.size === 0) {
-          setEdges(currentEdges => {
-            if (yedges.size === 0 && currentEdges.length > 0) {
-              currentEdges.forEach(e => yedges.set(e.id, e));
-            }
-            return currentEdges;
-          });
-        }
+    // Safe auto-seeding of empty Yjs shared maps with local board/page state
+    const performSafeAutoSeeding = () => {
+      if (ynodes.size === 0) {
+        setNodes(currentNodes => {
+          if (ynodes.size === 0 && currentNodes.length > 0) {
+            currentNodes.forEach(n => ynodes.set(n.id, n));
+          }
+          return currentNodes;
+        });
       }
-    });
+      if (yedges.size === 0) {
+        setEdges(currentEdges => {
+          if (yedges.size === 0 && currentEdges.length > 0) {
+            currentEdges.forEach(e => yedges.set(e.id, e));
+          }
+          return currentEdges;
+        });
+      }
+    };
+
+    // Check if synced already, otherwise hook into 'sync' event
+    if (provider.synced) {
+      performSafeAutoSeeding();
+    } else {
+      provider.on("sync", (isSynced: boolean) => {
+        if (isSynced) {
+          performSafeAutoSeeding();
+        }
+      });
+    }
 
     return () => {
       provider.destroy();
