@@ -548,7 +548,7 @@ export default function ApmLensApp() {
   useEffect(() => {
     const fetchGraphData = async () => {
       try {
-        const token = localStorage.getItem("auth_token") || "";
+        const token = localStorage.getItem("labb_token") || "";
         const headers = {
           "Authorization": `Bearer ${token}`
         };
@@ -856,7 +856,7 @@ export default function ApmLensApp() {
     e.preventDefault();
     if (!editingNode || !editingNode.name) return;
 
-    const token = localStorage.getItem("auth_token") || "";
+    const token = localStorage.getItem("labb_token") || "";
     const headers = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${token}`
@@ -915,7 +915,7 @@ export default function ApmLensApp() {
         { sender: "ai", text: `Tillgång raderad (Cascade-delete slutförd): ${node.name}.` }
       ]);
       try {
-        const token = localStorage.getItem("auth_token") || "";
+        const token = localStorage.getItem("labb_token") || "";
         await fetch(getApiUrl(`/api/graph/nodes/${nodeId}`), {
           method: "DELETE",
           headers: { "Authorization": `Bearer ${token}` }
@@ -1568,7 +1568,7 @@ export default function ApmLensApp() {
                                           { sender: "ai", text: `Koppling borttagen: [${src.name}] -${edge.type}-> [${tgt.name}].` }
                                         ]);
                                         try {
-                                          const token = localStorage.getItem("auth_token") || "";
+                                          const token = localStorage.getItem("labb_token") || "";
                                           await fetch(getApiUrl(`/api/graph/edges/${edge.id}`), {
                                             method: "DELETE",
                                             headers: { "Authorization": `Bearer ${token}` }
@@ -1616,7 +1616,7 @@ export default function ApmLensApp() {
                       setNewEdgeContract("");
 
                       try {
-                        const token = localStorage.getItem("auth_token") || "";
+                        const token = localStorage.getItem("labb_token") || "";
                         await fetch(getApiUrl("/api/graph/edges"), {
                           method: "POST",
                           headers: {

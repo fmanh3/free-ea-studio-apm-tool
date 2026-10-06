@@ -146,6 +146,7 @@ app.post("/api/auth/google", async (req, res) => {
     };
 
     ACTIVE_SESSIONS.set(sessionToken, userSession);
+    console.log(`[AUTH GOOGLE] Successful SSO login. Email: ${email}, Name: ${userSession.name}`);
 
     res.json({ 
       success: true, 

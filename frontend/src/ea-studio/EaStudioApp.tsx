@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -792,6 +792,8 @@ function EaStudioAppContent() {
   const [yjsNodes, setYjsNodes] = useState<Y.Map<any> | null>(null);
   const [yjsEdges, setYjsEdges] = useState<Y.Map<any> | null>(null);
   const [presenceUsers, setPresenceUsers] = useState<any[]>([]);
+  const [otherCursors, setOtherCursors] = useState<any[]>([]);
+  const providerRef = useRef<any>(null);
 
   const getWsUrl = () => {
     const isDev = window.location.hostname === "localhost" && window.location.port !== "8080";
@@ -920,6 +922,7 @@ function EaStudioAppContent() {
     
     // Create connection room dedicated to the active board
     const provider = new WebsocketProvider(wsUrl, activeBoardId, ydoc);
+    providerRef.current = provider;
 
     const ynodes = ydoc.getMap<any>("nodes");
     const yedges = ydoc.getMap<any>("edges");
@@ -935,13 +938,31 @@ function EaStudioAppContent() {
       color: colorStyle
     });
 
-    // Track online workshop members inside this specific board room
+    // Track online workshop members and cursors inside this specific board room
     provider.awareness.on("change", () => {
-      const states = Array.from(provider.awareness.getStates().values());
+      const states = Array.from(provider.awareness.getStates().entries());
+      
       const activeNames = states
-        .map((s: any) => s.user)
+        .map(([_, s]: any) => s.user)
         .filter(Boolean);
       setPresenceUsers(activeNames);
+
+      const cursors = states
+        .filter(([clientId]: any) => clientId !== ydoc.clientID)
+        .map(([clientId, s]: any) => {
+          if (s.user && s.cursor) {
+            return {
+              id: clientId,
+              name: s.user.name,
+              x: s.cursor.x,
+              y: s.cursor.y,
+              color: s.user.color
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      setOtherCursors(cursors as any[]);
     });
 
     // Synchronize remote changes into ReactFlow local state
@@ -995,6 +1016,8 @@ function EaStudioAppContent() {
     return () => {
       provider.destroy();
       ydoc.destroy();
+      providerRef.current = null;
+      setOtherCursors([]);
     };
   }, [activeBoardId]);
 
@@ -1290,6 +1313,20 @@ function EaStudioAppContent() {
       setActivePageId(targetPageId);
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!providerRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    providerRef.current.awareness.setLocalStateField("cursor", { x, y });
+  };
+
+  const handleMouseLeave = () => {
+    if (providerRef.current) {
+      providerRef.current.awareness.setLocalStateField("cursor", null);
     }
   };
 
@@ -2024,7 +2061,11 @@ function EaStudioAppContent() {
       </aside>
 
       {/* ==================== MIDDLE: CANVAS ==================== */}
-      <main className="flex-1 flex flex-col relative bg-slate-950">
+      <main 
+        className="flex-1 flex flex-col relative bg-slate-950"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
         
         {/* ==================== THE CANVAS NAVIGATOR (TABS) ==================== */}
         <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between z-10 select-none">
@@ -2337,6 +2378,38 @@ function EaStudioAppContent() {
             return "#fbbf24";
           }} className="!bg-slate-950 !border-slate-800" />
         </ReactFlow>
+
+        {/* Real-time Collaborative Cursors (Miro-style cursors with names/initials) */}
+        {otherCursors.map(cursor => (
+          <div
+            key={cursor.id}
+            style={{
+              position: "absolute",
+              left: cursor.x,
+              top: cursor.y,
+              pointerEvents: "none",
+              zIndex: 9999,
+              transition: "left 0.08s ease-out, top 0.08s ease-out"
+            }}
+            className="flex items-center gap-1.5 animate-fadeIn select-none"
+          >
+            {/* Custom SVG mouse cursor arrow */}
+            <svg
+              className="w-4 h-4 drop-shadow-md text-purple-500 fill-current"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M4.5 3.21a.5.5 0 0 0-.76.54l3.12 11.23a.5.5 0 0 0 .93.07l2.12-4.14 4.14-2.12a.5.5 0 0 0-.07-.93L4.5 3.21z" />
+            </svg>
+            
+            {/* User tag with name/initials */}
+            <div className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border shadow bg-slate-950/90 whitespace-nowrap ${
+              cursor.color || "text-slate-400 border-slate-800"
+            }`}>
+              {cursor.name}
+            </div>
+          </div>
+        ))}
       </main>
 
       {/* ==================== RIGHT: INSPECTOR SIDEBAR ==================== */}
