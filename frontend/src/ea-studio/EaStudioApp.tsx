@@ -1008,6 +1008,26 @@ function EaStudioAppContent() {
     const ynodes = ydoc.getMap<any>("nodes");
     const yedges = ydoc.getMap<any>("edges");
 
+    // Synchronous seeding on mount to break the synchronization paradox!
+    // This writes the database nodes to Yjs before any remote sync messages can arrive.
+    const initialNodes = nodesRef.current;
+    const initialEdges = edgesRef.current;
+
+    if (initialNodes.length > 0) {
+      initialNodes.forEach(n => {
+        if (ynodes.get(n.id) === undefined) {
+          ynodes.set(n.id, sanitizeNodeForYjs(n));
+        }
+      });
+    }
+    if (initialEdges.length > 0) {
+      initialEdges.forEach(e => {
+        if (yedges.get(e.id) === undefined) {
+          yedges.set(e.id, sanitizeEdgeForYjs(e));
+        }
+      });
+    }
+
     // Seed local user profile details into Yjs Awareness (for presence list)
     const user = JSON.parse(localStorage.getItem("labb_user") || '{"name": "Gäst", "email": "labb@forefront.se"}');
     const colorStyle = user.email?.endsWith("@forefront.se") 
