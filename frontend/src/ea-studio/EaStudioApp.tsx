@@ -1027,6 +1027,28 @@ function EaStudioAppContent() {
     setYjsNodes(ynodes);
     setYjsEdges(yedges);
 
+    // Auto-seed Yjs maps with local page state if the remote Yjs maps are empty on connection
+    provider.on("sync", (isSynced: boolean) => {
+      if (isSynced) {
+        if (ynodes.size === 0) {
+          setNodes(currentNodes => {
+            if (ynodes.size === 0 && currentNodes.length > 0) {
+              currentNodes.forEach(n => ynodes.set(n.id, n));
+            }
+            return currentNodes;
+          });
+        }
+        if (yedges.size === 0) {
+          setEdges(currentEdges => {
+            if (yedges.size === 0 && currentEdges.length > 0) {
+              currentEdges.forEach(e => yedges.set(e.id, e));
+            }
+            return currentEdges;
+          });
+        }
+      }
+    });
+
     return () => {
       provider.destroy();
       ydoc.destroy();
