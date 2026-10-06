@@ -805,6 +805,17 @@ function EaStudioAppContent() {
   const [nodes, setNodes, onNodesChange] = useNodesState(pages[0].nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(pages[0].edges);
 
+  const nodesRef = useRef<Node[]>([]);
+  const edgesRef = useRef<Edge[]>([]);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
   // Sync state changes in ReactFlow directly to Yjs shared maps
   const onNodesChangeWithSync = useCallback((changes: any) => {
     onNodesChange(changes);
@@ -1029,20 +1040,21 @@ function EaStudioAppContent() {
 
     // Safe auto-seeding of empty Yjs shared maps with local board/page state
     const performSafeAutoSeeding = () => {
-      if (ynodes.size === 0) {
-        setNodes(currentNodes => {
-          if (ynodes.size === 0 && currentNodes.length > 0) {
-            currentNodes.forEach(n => ynodes.set(n.id, n));
+      const currentNodes = nodesRef.current;
+      const currentEdges = edgesRef.current;
+
+      if (ynodes.size === 0 && currentNodes.length > 0) {
+        currentNodes.forEach(n => {
+          if (!ynodes.has(n.id)) {
+            ynodes.set(n.id, n);
           }
-          return currentNodes;
         });
       }
-      if (yedges.size === 0) {
-        setEdges(currentEdges => {
-          if (yedges.size === 0 && currentEdges.length > 0) {
-            currentEdges.forEach(e => yedges.set(e.id, e));
+      if (yedges.size === 0 && currentEdges.length > 0) {
+        currentEdges.forEach(e => {
+          if (!yedges.has(e.id)) {
+            yedges.set(e.id, e);
           }
-          return currentEdges;
         });
       }
     };
