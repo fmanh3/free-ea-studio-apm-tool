@@ -996,13 +996,14 @@ function EaStudioAppContent() {
 
   // YJS Websocket Room Connection & State Synchronization (Fas 3 multiplayer)
   useEffect(() => {
-    if (!activeBoardId) return;
+    if (!activeBoardId || !activePageId) return;
 
     const ydoc = new Y.Doc();
     const wsUrl = getWsUrl();
     
-    // Create connection room dedicated to the active board
-    const provider = new WebsocketProvider(wsUrl, activeBoardId, ydoc);
+    // Create connection room dedicated to the active page of the active board
+    const roomName = `${activeBoardId}-${activePageId}`;
+    const provider = new WebsocketProvider(wsUrl, roomName, ydoc);
     providerRef.current = provider;
 
     const ynodes = ydoc.getMap<any>("nodes");
@@ -1154,7 +1155,7 @@ function EaStudioAppContent() {
       providerRef.current = null;
       setOtherCursors([]);
     };
-  }, [activeBoardId]);
+  }, [activeBoardId, activePageId]);
 
   // Trigger semantic query fetch
   const handleTriggerSemanticSearch = () => {
