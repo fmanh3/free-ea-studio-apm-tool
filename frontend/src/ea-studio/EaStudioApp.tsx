@@ -820,6 +820,15 @@ function EaStudioAppContent() {
   const onNodesChangeWithSync = useCallback((changes: any) => {
     onNodesChange(changes);
     if (yjsNodes) {
+      // JIT Seeding: If Yjs nodes map is completely empty, populate it first!
+      if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
+        nodesRef.current.forEach(n => {
+          if (!yjsNodes.has(n.id)) {
+            yjsNodes.set(n.id, n);
+          }
+        });
+      }
+
       changes.forEach((c: any) => {
         if (c.type === "position" && c.position) {
           const current = yjsNodes.get(c.id);
@@ -853,6 +862,15 @@ function EaStudioAppContent() {
   const onEdgesChangeWithSync = useCallback((changes: any) => {
     onEdgesChange(changes);
     if (yjsEdges) {
+      // JIT Seeding: If Yjs edges map is completely empty, populate it first!
+      if (Array.from(yjsEdges.keys()).length === 0 && edgesRef.current.length > 0) {
+        edgesRef.current.forEach(e => {
+          if (!yjsEdges.has(e.id)) {
+            yjsEdges.set(e.id, e);
+          }
+        });
+      }
+
       changes.forEach((c: any) => {
         if (c.type === "remove") {
           yjsEdges.delete(c.id);
@@ -1582,6 +1600,14 @@ function EaStudioAppContent() {
     };
     setNodes((nds) => [...nds, spawnedNode]);
     if (yjsNodes) {
+      // JIT Seeding: If Yjs nodes map is completely empty, populate it first!
+      if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
+        nodesRef.current.forEach(n => {
+          if (!yjsNodes.has(n.id)) {
+            yjsNodes.set(n.id, n);
+          }
+        });
+      }
       yjsNodes.set(spawnedId, spawnedNode);
     }
     
@@ -1601,6 +1627,14 @@ function EaStudioAppContent() {
     };
     setNodes((nds) => [...nds, newNode]);
     if (yjsNodes) {
+      // JIT Seeding: If Yjs nodes map is completely empty, populate it first!
+      if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
+        nodesRef.current.forEach(n => {
+          if (!yjsNodes.has(n.id)) {
+            yjsNodes.set(n.id, n);
+          }
+        });
+      }
       yjsNodes.set(spawnedId, newNode);
     }
   };
