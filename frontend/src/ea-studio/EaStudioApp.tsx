@@ -820,8 +820,8 @@ function EaStudioAppContent() {
   const onNodesChangeWithSync = useCallback((changes: any) => {
     onNodesChange(changes);
     if (yjsNodes) {
-      // JIT Seeding: If Yjs nodes map is completely empty, populate it first!
-      if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
+      // JIT Self-Healing Seeding: Seed any missing local nodes into Yjs
+      if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
             yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
@@ -862,8 +862,8 @@ function EaStudioAppContent() {
   const onEdgesChangeWithSync = useCallback((changes: any) => {
     onEdgesChange(changes);
     if (yjsEdges) {
-      // JIT Seeding: If Yjs edges map is completely empty, populate it first!
-      if (Array.from(yjsEdges.keys()).length === 0 && edgesRef.current.length > 0) {
+      // JIT Self-Healing Seeding: Seed any missing local edges into Yjs
+      if (edgesRef.current.length > 0) {
         edgesRef.current.forEach(e => {
           if (!yjsEdges.has(e.id)) {
             yjsEdges.set(e.id, JSON.parse(JSON.stringify(e)));
@@ -1062,20 +1062,17 @@ function EaStudioAppContent() {
       const currentNodes = nodesRef.current;
       const currentEdges = edgesRef.current;
 
-      const ynodesEmpty = Array.from(ynodes.keys()).length === 0;
-      const yedgesEmpty = Array.from(yedges.keys()).length === 0;
-
-      if (ynodesEmpty && currentNodes.length > 0) {
+      if (currentNodes.length > 0) {
         currentNodes.forEach(n => {
           if (!ynodes.has(n.id)) {
-            ynodes.set(n.id, n);
+            ynodes.set(n.id, JSON.parse(JSON.stringify(n)));
           }
         });
       }
-      if (yedgesEmpty && currentEdges.length > 0) {
+      if (currentEdges.length > 0) {
         currentEdges.forEach(e => {
           if (!yedges.has(e.id)) {
-            yedges.set(e.id, e);
+            yedges.set(e.id, JSON.parse(JSON.stringify(e)));
           }
         });
       }
@@ -1646,8 +1643,8 @@ function EaStudioAppContent() {
     };
     setNodes((nds) => [...nds, spawnedNode]);
     if (yjsNodes) {
-      // JIT Seeding: If Yjs nodes map is completely empty, populate it first!
-      if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
+      // JIT Self-Healing: Seed any missing local nodes into Yjs
+      if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
             yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
@@ -1686,8 +1683,8 @@ function EaStudioAppContent() {
     };
     setNodes((nds) => [...nds, newNode]);
     if (yjsNodes) {
-      // JIT Seeding: If Yjs nodes map is completely empty, populate it first!
-      if (Array.from(yjsNodes.keys()).length === 0 && nodesRef.current.length > 0) {
+      // JIT Self-Healing: Seed any missing local nodes into Yjs
+      if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
           if (!yjsNodes.has(n.id)) {
             yjsNodes.set(n.id, JSON.parse(JSON.stringify(n)));
