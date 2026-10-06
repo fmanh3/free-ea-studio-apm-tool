@@ -142,6 +142,12 @@ const PlusCircle = ({ className = "w-4 h-4" }) => (
   </svg>
 );
 
+const Activity = ({ className = "w-4 h-4" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </svg>
+);
+
 // ==================== COMPREHENSIVE DECOUPLED DATA MODEL ====================
 
 type EAObjectType = 
@@ -651,6 +657,36 @@ export default function ApmLensApp() {
   // CRUD Catalog State management
   const [selectedCatalogType, setSelectedCatalogType] = useState<EAObjectType>("Applikation");
   const [editingNode, setEditingNode] = useState<Partial<EANode> | null>(null);
+
+  // Blast Radius State
+  const [selectedBlastRadiusNodeId, setSelectedBlastRadiusNodeId] = useState<string | null>(null);
+  const [blastRadiusData, setBlastRadiusData] = useState<any>(null);
+  const [loadingBlastRadius, setLoadingBlastRadius] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!selectedBlastRadiusNodeId) {
+      setBlastRadiusData(null);
+      return;
+    }
+    const fetchBlastRadius = async () => {
+      setLoadingBlastRadius(true);
+      try {
+        const token = localStorage.getItem("labb_token") || "";
+        const res = await fetch(getApiUrl(`/api/graph/blast-radius/${selectedBlastRadiusNodeId}`), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setBlastRadiusData(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch blast radius data", err);
+      } finally {
+        setLoadingBlastRadius(false);
+      }
+    };
+    fetchBlastRadius();
+  }, [selectedBlastRadiusNodeId]);
 
   // Connection/Edge Manager State
   const [catalogViewMode, setCatalogViewMode] = useState<"nodes" | "edges">("nodes");
@@ -1833,6 +1869,7 @@ export default function ApmLensApp() {
                         <th className="py-2 px-3 bg-slate-900">Namn</th>
                         <th className="py-2 px-3 bg-slate-900">Beskrivning</th>
                         <th className="py-2 px-3 bg-slate-900">Nyckel-attribut</th>
+                        <th className="py-2 px-3 text-center bg-slate-900">Blast Radius</th>
                         <th className="py-2 px-3 text-center bg-slate-900">Redigera</th>
                         <th className="py-2 px-3 text-center bg-slate-900">Radera</th>
                       </tr>
@@ -1854,7 +1891,25 @@ export default function ApmLensApp() {
                           </td>
                           <td className="py-3 px-3 text-center">
                             <button
-                              onClick={() => setEditingNode(node)}
+                              onClick={() => {
+                                setEditingNode(null);
+                                setSelectedBlastRadiusNodeId(node.id);
+                              }}
+                              className={`text-[10px] px-2 py-0.5 rounded border font-bold flex items-center gap-1 mx-auto transition-all ${
+                                selectedBlastRadiusNodeId === node.id
+                                  ? "bg-purple-600/20 text-purple-400 border-purple-500/40"
+                                  : "bg-slate-950/40 text-slate-400 border-slate-800 hover:border-purple-500/30 hover:text-purple-400"
+                              }`}
+                            >
+                              <Activity className="w-3 h-3" /> Analysera
+                            </button>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <button
+                              onClick={() => {
+                                setSelectedBlastRadiusNodeId(null);
+                                setEditingNode(node);
+                              }}
                               className="text-purple-400 hover:text-purple-300 font-bold hover:underline"
                             >
                               Redigera
@@ -2130,6 +2185,142 @@ export default function ApmLensApp() {
                       </button>
                     </div>
                   </form>
+                ) : selectedBlastRadiusNodeId ? (
+                  /* ==================== INTERACTIVE BLAST RADIUS REPORT ==================== */
+                  <div className="space-y-4 animate-fadeIn font-sans h-full flex flex-col justify-between">
+                    <div className="space-y-4">
+                      {/* Header with node info */}
+                      <div className="border-b border-slate-800 pb-3 flex justify-between items-start">
+                        <div>
+                          <span className="text-[9px] bg-purple-500/10 text-purple-400 font-extrabold uppercase tracking-widest px-2 py-0.5 rounded border border-purple-500/20 mb-1 inline-block">
+                            Blast Radius Analys
+                          </span>
+                          <h4 className="text-sm font-extrabold text-white">
+                            {blastRadiusData?.startNode?.name || "Laddar..."}
+                          </h4>
+                          <span className="text-[9px] text-slate-500 font-mono font-bold block mt-0.5">
+                            TYP: {blastRadiusData?.startNode?.type || "Laddar..."}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setSelectedBlastRadiusNodeId(null)}
+                          className="text-slate-500 hover:text-slate-300 font-bold text-xs"
+                          title="Stäng analys"
+                        >
+                          &times; Stäng
+                        </button>
+                      </div>
+
+                      {loadingBlastRadius ? (
+                        <div className="py-12 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                          <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                          <span>Beräknar graf-traversering live...</span>
+                        </div>
+                      ) : blastRadiusData ? (
+                        <div className="space-y-4 text-xs">
+                          {/* Risk Gauge */}
+                          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80 space-y-2">
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="uppercase tracking-wider font-bold text-slate-500">Konsekvens-Risk (Blast Index)</span>
+                              <span className={`font-mono font-bold text-xs ${
+                                blastRadiusData.riskScore >= 15
+                                  ? "text-rose-400 animate-pulse"
+                                  : blastRadiusData.riskScore >= 5
+                                    ? "text-amber-400"
+                                    : "text-emerald-400"
+                              }`}>
+                                {blastRadiusData.riskScore} / 100
+                              </span>
+                            </div>
+                            
+                            {/* Simple Visual progress bar */}
+                            <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+                              <div 
+                                style={{ width: `${Math.min(100, blastRadiusData.riskScore * 4)}%` }} 
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  blastRadiusData.riskScore >= 15
+                                    ? "bg-gradient-to-r from-rose-500 to-red-600"
+                                    : blastRadiusData.riskScore >= 5
+                                      ? "bg-gradient-to-r from-amber-500 to-orange-500"
+                                      : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                                }`}
+                              ></div>
+                            </div>
+                            
+                            <p className="text-[10px] text-slate-400 italic leading-relaxed">
+                              {blastRadiusData.riskScore >= 15
+                                ? "Kritisk risk: Avveckling/ändring slår brett i hela systemlandskapet och påverkar flera verksamhetsprodukter."
+                                : blastRadiusData.riskScore >= 5
+                                  ? "Måttlig risk: Ändringen har måttlig spridning och bör samordnas med berörda team."
+                                  : "Låg risk: Ändringens effekter är starkt lokaliserade med minimal systemspridning."}
+                            </p>
+                          </div>
+
+                          {/* Affected list */}
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-[10px] text-slate-500 border-b border-slate-800/40 pb-1">
+                              <span className="font-bold uppercase tracking-wider">Kedjeeffekter i landskapet ({blastRadiusData.affectedNodes.length} drabbade)</span>
+                              <span className="font-mono">Max 3 hopp</span>
+                            </div>
+
+                            {blastRadiusData.affectedNodes.length === 0 ? (
+                              <p className="text-slate-500 italic py-4 text-center">Noden är helt isolerad och har inga konsekvenser.</p>
+                            ) : (
+                              <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                                {blastRadiusData.affectedNodes
+                                  .sort((a: any, b: any) => a.distance - b.distance)
+                                  .map((item: any) => (
+                                    <div key={item.id} className="flex justify-between items-center bg-slate-950/40 hover:bg-slate-950 p-2 rounded border border-slate-800/40 transition-colors">
+                                      <div className="flex flex-col">
+                                        <span className="font-bold text-slate-200">{item.name}</span>
+                                        <span className="text-[9px] text-slate-500">
+                                          {item.type} &bull; Rel: {item.impactRelation || "Kopplad"}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold border ${
+                                          item.criticality === "Critical"
+                                            ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                            : item.criticality === "High"
+                                              ? "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                                              : "bg-slate-800 text-slate-400 border-slate-700/50"
+                                        }`}>
+                                          {item.criticality || "Medium"}
+                                        </span>
+                                        <span className="bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[9px] font-bold px-1.5 py-0.5 rounded font-mono">
+                                          {item.distance} {item.distance === 1 ? "hopp" : "hopp"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-slate-500 italic">Kunde inte beräkna spridning.</div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800">
+                      <button
+                        onClick={() => {
+                          const name = blastRadiusData?.startNode?.name;
+                          const count = blastRadiusData?.affectedNodes?.length || 0;
+                          const score = blastRadiusData?.riskScore || 0;
+                          setChatHistory(prev => [
+                            ...prev,
+                            { sender: "user", text: `Analysera Blast Radius för ${name}.` },
+                            { sender: "ai", text: `Blast Radius-analys för "${name}" är beräknad! Denna komponent har ett Blast Index på ${score}/100. Vid en förändring drabbas totalt ${count} downstream-arkitekturkomponenter direkt eller indirekt (upp till 3 nivåers djup i grafen). Se rapporten i högerpanelen för fullständig genomgång av spridningsrisken.` }
+                          ]);
+                        }}
+                        className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded text-xs transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Activity className="w-3.5 h-3.5 animate-pulse" />
+                        <span>Diskutera med AI-Copilot</span>
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="text-center py-12 text-slate-500 flex flex-col items-center justify-center gap-3 h-full">
                     <ClipboardList className="w-10 h-10 text-slate-700" />

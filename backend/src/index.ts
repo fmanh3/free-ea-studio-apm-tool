@@ -909,6 +909,159 @@ app.post("/api/graph/seed", async (req, res) => {
   }
 });
 
+// 8. Blast Radius / Impact Analysis (Fas 4 advanced traversals)
+app.get("/api/graph/blast-radius/:nodeId", async (req, res) => {
+  const { nodeId } = req.params;
+  console.log(`[GET /api/graph/blast-radius/${nodeId}] Request received. Neo4j active: ${!!driver}`);
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        const startResult = await session.run(`
+          MATCH (n {id: $nodeId})
+          RETURN n {.*, id: n.id, type: labels(n)[0]} AS node
+        `, { nodeId });
+        
+        if (startResult.records.length === 0) {
+          return res.status(404).json({ error: "Start-nod hittades inte." });
+        }
+        const startNode = startResult.records[0].get("node");
+
+        // Cypher to find connected nodes and edges up to 3 hops
+        const pathResult = await session.run(`
+          MATCH (start {id: $nodeId})
+          MATCH path = (start)-[r*1..3]-(affected)
+          RETURN affected {.*, id: affected.id, type: labels(affected)[0]} AS node, 
+                 r AS relationships,
+                 length(path) AS distance
+        `, { nodeId });
+
+        const affectedNodesMap = new Map<string, any>();
+        const affectedEdgesMap = new Map<string, any>();
+
+        pathResult.records.forEach((row: any) => {
+          const node = row.get("node");
+          const dist = row.get("distance");
+          const rels = row.get("relationships");
+
+          if (!affectedNodesMap.has(node.id)) {
+            affectedNodesMap.set(node.id, { ...node, distance: dist });
+          }
+
+          rels.forEach((rel: any) => {
+            const edgeId = rel.properties.id || `edge-${rel.elementId}`;
+            affectedEdgesMap.set(edgeId, {
+              id: edgeId,
+              sourceId: rel.startNodeElementId || rel.start,
+              targetId: rel.endNodeElementId || rel.end,
+              type: rel.type,
+              coupling: rel.properties.coupling,
+              kontrakt: rel.properties.kontrakt
+            });
+          });
+        });
+
+        const affectedNodes = Array.from(affectedNodesMap.values());
+        const affectedEdges = Array.from(affectedEdgesMap.values());
+
+        let riskScore = 0;
+        affectedNodes.forEach((item: any) => {
+          const crit = item.criticality || "Medium";
+          const weight = crit === "Critical" ? 10 : crit === "High" ? 6 : crit === "Medium" ? 3 : 1;
+          const distanceFactor = item.distance === 1 ? 1.0 : item.distance === 2 ? 0.6 : 0.3;
+          riskScore += weight * distanceFactor;
+        });
+        riskScore = Math.round(riskScore);
+
+        console.log(`[GET /api/graph/blast-radius] Neo4j returned ${affectedNodes.length} affected nodes. Risk: ${riskScore}`);
+        return res.json({
+          startNode,
+          affectedNodes,
+          affectedEdges,
+          riskScore
+        });
+      } finally {
+        await session.close();
+      }
+    }
+
+    // In-Memory fallback implementation (maintains bimodal safety)
+    const startNode = graphNodesDb.find(n => n.id === nodeId);
+    if (!startNode) {
+      return res.status(404).json({ error: "Start-nod hittades inte i fallback-databasen." });
+    }
+
+    const affectedNodesMap = new Map<string, { node: EANode; distance: number; relationType: string }>();
+    const affectedEdgesSet = new Set<EAEdge>();
+
+    const queue: [string, number][] = [[nodeId, 0]];
+    const visited = new Set<string>([nodeId]);
+
+    while (queue.length > 0) {
+      const [currId, dist] = queue.shift()!;
+      if (dist >= 3) continue;
+
+      const connectedEdges = graphEdgesDb.filter(e => e.sourceId === currId || e.targetId === currId);
+
+      for (const edge of connectedEdges) {
+        if (edge.sourceId === currId) {
+          const neighborId = edge.targetId;
+          if (!visited.has(neighborId)) {
+            const neighborNode = graphNodesDb.find(n => n.id === neighborId);
+            if (neighborNode) {
+              visited.add(neighborId);
+              affectedNodesMap.set(neighborId, { node: neighborNode, distance: dist + 1, relationType: edge.type });
+              affectedEdgesSet.add(edge);
+              queue.push([neighborId, dist + 1]);
+            }
+          } else {
+            affectedEdgesSet.add(edge);
+          }
+        } else if (edge.targetId === currId) {
+          const neighborId = edge.sourceId;
+          if (!visited.has(neighborId)) {
+            const neighborNode = graphNodesDb.find(n => n.id === neighborId);
+            if (neighborNode) {
+              visited.add(neighborId);
+              affectedNodesMap.set(neighborId, { node: neighborNode, distance: dist + 1, relationType: edge.type });
+              affectedEdgesSet.add(edge);
+              queue.push([neighborId, dist + 1]);
+            }
+          } else {
+            affectedEdgesSet.add(edge);
+          }
+        }
+      }
+    }
+
+    const affectedNodes = Array.from(affectedNodesMap.values()).map(item => ({
+      ...item.node,
+      distance: item.distance,
+      impactRelation: item.relationType
+    }));
+
+    let riskScore = 0;
+    affectedNodes.forEach(item => {
+      const crit = item.criticality || "Medium";
+      const weight = crit === "Critical" ? 10 : crit === "High" ? 6 : crit === "Medium" ? 3 : 1;
+      const distanceFactor = item.distance === 1 ? 1.0 : item.distance === 2 ? 0.6 : 0.3;
+      riskScore += weight * distanceFactor;
+    });
+    riskScore = Math.round(riskScore);
+
+    console.log(`[GET /api/graph/blast-radius] Fallback calculated ${affectedNodes.length} affected nodes. Risk: ${riskScore}`);
+    res.json({
+      startNode,
+      affectedNodes,
+      affectedEdges: Array.from(affectedEdgesSet),
+      riskScore
+    });
+  } catch (err: any) {
+    console.error("[GET /api/graph/blast-radius] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== WORKSPACE CATALOG ENDPOINTS ====================
 
 // 1. Folders Endpoints
