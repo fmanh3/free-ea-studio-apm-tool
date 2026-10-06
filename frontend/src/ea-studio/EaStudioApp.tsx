@@ -860,7 +860,7 @@ function EaStudioAppContent() {
       // JIT Self-Healing Seeding: Seed any missing local nodes into Yjs
       if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
-          if (!yjsNodes.has(n.id)) {
+          if (yjsNodes.get(n.id) === undefined) {
             yjsNodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
@@ -902,7 +902,7 @@ function EaStudioAppContent() {
       // JIT Self-Healing Seeding: Seed any missing local edges into Yjs
       if (edgesRef.current.length > 0) {
         edgesRef.current.forEach(e => {
-          if (!yjsEdges.has(e.id)) {
+          if (yjsEdges.get(e.id) === undefined) {
             yjsEdges.set(e.id, sanitizeEdgeForYjs(e));
           }
         });
@@ -1101,14 +1101,14 @@ function EaStudioAppContent() {
 
       if (currentNodes.length > 0) {
         currentNodes.forEach(n => {
-          if (!ynodes.has(n.id)) {
+          if (ynodes.get(n.id) === undefined) {
             ynodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
       }
       if (currentEdges.length > 0) {
         currentEdges.forEach(e => {
-          if (!yedges.has(e.id)) {
+          if (yedges.get(e.id) === undefined) {
             yedges.set(e.id, sanitizeEdgeForYjs(e));
           }
         });
@@ -1683,7 +1683,7 @@ function EaStudioAppContent() {
       // JIT Self-Healing: Seed any missing local nodes into Yjs
       if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
-          if (!yjsNodes.has(n.id)) {
+          if (yjsNodes.get(n.id) === undefined) {
             yjsNodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
@@ -1723,7 +1723,7 @@ function EaStudioAppContent() {
       // JIT Self-Healing: Seed any missing local nodes into Yjs
       if (nodesRef.current.length > 0) {
         nodesRef.current.forEach(n => {
-          if (!yjsNodes.has(n.id)) {
+          if (yjsNodes.get(n.id) === undefined) {
             yjsNodes.set(n.id, sanitizeNodeForYjs(n));
           }
         });
