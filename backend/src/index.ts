@@ -7,6 +7,7 @@ import crypto from "crypto";
 import fs from "fs";
 import { Firestore } from "@google-cloud/firestore";
 import { WebSocketServer } from "ws";
+import { VertexAI } from "@google-cloud/vertexai";
 
 const { setupWSConnection } = require("y-websocket/bin/utils");
 
@@ -21,8 +22,10 @@ app.use(express.json());
 let db: any;
 if (process.env.NODE_ENV === "production") {
   try {
-    db = new Firestore();
-    console.log("Google Cloud Firestore active (Production).");
+    db = new Firestore({
+      databaseId: process.env.FIRESTORE_DATABASE_ID || undefined
+    });
+    console.log(`Google Cloud Firestore active (Production). Database ID: ${process.env.FIRESTORE_DATABASE_ID || "(default)"}`);
   } catch (err) {
     console.error("Failed to initialize Google Cloud Firestore:", err);
   }
@@ -988,6 +991,97 @@ app.post("/api/graph/seed", async (req, res) => {
   }
 });
 
+// 7.5. Bulk Import (Additiv / Merge - Fas 7)
+app.post("/api/graph/bulk-import", async (req, res) => {
+  console.log(`[POST /api/graph/bulk-import] Bulk import request received. Neo4j active: ${!!driver}`);
+  const { nodes = [], edges = [] } = req.body;
+  
+  if (!Array.isArray(nodes) || !Array.isArray(edges)) {
+    return res.status(400).json({ error: "Ogiltig payload. 'nodes' och 'edges' måste vara listor (arrays)." });
+  }
+
+  try {
+    if (driver) {
+      const session = driver.session();
+      try {
+        let importedNodes = 0;
+        let importedEdges = 0;
+
+        // Använd transaktioner för att snabba upp bulk-importen
+        await session.executeWrite(async (tx: any) => {
+          for (const n of nodes) {
+            const { id, type, ...properties } = n;
+            const cleanType = type.replace(/[^a-zA-Z0-9_]/g, "");
+            await tx.run(`
+              MERGE (node:${cleanType} {id: $id})
+              SET node += $properties
+              SET node.id = $id
+            `, { id, properties });
+            importedNodes++;
+          }
+
+          for (const e of edges) {
+            const cleanType = e.type.replace(/[^a-zA-Z0-9_]/g, "");
+            await tx.run(`
+              MATCH (s {id: $sourceId})
+              MATCH (t {id: $targetId})
+              MERGE (s)-[r:${cleanType}]->(t)
+              SET r += $properties
+              SET r.id = $id
+              SET r.sourceId = $sourceId
+              SET r.targetId = $targetId
+            `, {
+              sourceId: e.sourceId,
+              targetId: e.targetId,
+              id: e.id,
+              properties: {
+                coupling: e.coupling || null,
+                kontrakt: e.kontrakt || null,
+                drag: e.drag || null
+              }
+            });
+            importedEdges++;
+          }
+        });
+        
+        console.log(`[BULK-IMPORT] Neo4j successfully merged ${importedNodes} nodes and ${importedEdges} edges.`);
+        return res.json({ success: true, message: `Neo4j uppdaterades (merge) med ${importedNodes} noder och ${importedEdges} kopplingar.` });
+      } finally {
+        await session.close();
+      }
+    }
+
+    // In-memory fallback (additive update)
+    let importedNodes = 0;
+    nodes.forEach((n: any) => {
+      const idx = graphNodesDb.findIndex((existing) => existing.id === n.id);
+      if (idx !== -1) {
+        graphNodesDb[idx] = { ...graphNodesDb[idx], ...n };
+      } else {
+        graphNodesDb.push(n);
+      }
+      importedNodes++;
+    });
+
+    let importedEdges = 0;
+    edges.forEach((e: any) => {
+      const idx = graphEdgesDb.findIndex((existing) => existing.id === e.id);
+      if (idx !== -1) {
+        graphEdgesDb[idx] = { ...graphEdgesDb[idx], ...e };
+      } else {
+        graphEdgesDb.push(e);
+      }
+      importedEdges++;
+    });
+
+    console.log(`[BULK-IMPORT] Fallback merged ${importedNodes} nodes and ${importedEdges} edges.`);
+    res.json({ success: true, message: `Mock fallbacks uppdaterades (merge) med ${importedNodes} noder och ${importedEdges} kopplingar.` });
+  } catch (err: any) {
+    console.error("[POST /api/graph/bulk-import] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 8. Blast Radius / Impact Analysis (Fas 4 advanced traversals)
 app.get("/api/graph/blast-radius/:nodeId", async (req, res) => {
   const { nodeId } = req.params;
@@ -1149,8 +1243,9 @@ app.post("/api/copilot/chat", async (req, res) => {
   console.log(`[POST /api/copilot/chat] Request received. Message: "${message}"`);
   
   try {
-    const geminiKey = process.env.GEMINI_API_KEY || "";
-    
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT || "joakim-hansson-lab";
+    const region = process.env.GCP_REGION || "europe-west1";
+
     // Collect context from graph database (Neo4j or mock fallback!)
     const currentNodes = graphNodesDb;
     const currentEdges = graphEdgesDb;
@@ -1176,41 +1271,37 @@ ${edgesSummary.substring(0, 3000)}
 
 Svara på användarens frågor på svenska. Håll dina svar fokuserade, professionella och konkreta (max 5 meningar, om inte kod, Cypher-frågor eller tabeller efterfrågas). Ge alltid djupgående råd baserat på grafstrukturen, till exempel skjuvning (shearing), bimodala tempo-klyftor (tau-skillnader) och spridningsrisk (Blast Radius).`;
 
-    if (geminiKey) {
-      console.log("[COPILOT] Using real Gemini API...");
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-      
-      const payload = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `${systemInstructions}\n\nAnvändarens fråga: "${message}"\nSvara nu:`
-              }
-            ]
+    // To allow local development fallback, if GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_CLOUD_PROJECT or NODE_ENV === production is true, we try to run via Vertex AI
+    const useVertex = process.env.NODE_ENV === "production" || process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_CLOUD_PROJECT;
+
+    if (useVertex) {
+      console.log(`[COPILOT] Connecting to Vertex AI on project: ${projectId}, region: ${region} via ADC...`);
+      try {
+        const vertexAI = new VertexAI({ project: projectId, location: region });
+        const generativeModel = vertexAI.getGenerativeModel({
+          model: "gemini-1.5-flash",
+          generationConfig: {
+            maxOutputTokens: 1000,
+            temperature: 0.3
           }
-        ],
-        generationConfig: {
-          maxOutputTokens: 1000,
-          temperature: 0.3
-        }
-      };
+        });
 
-      const apiRes = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+        const promptText = `${systemInstructions}\n\nAnvändarens fråga: "${message}"\nSvara nu:`;
+        
+        const response = await generativeModel.generateContent({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: promptText }]
+            }
+          ]
+        });
 
-      if (apiRes.ok) {
-        const apiData = await apiRes.json();
-        const responseText = apiData.candidates?.[0]?.content?.parts?.[0]?.text || "Kunde inte generera svar från Gemini.";
-        console.log(`[COPILOT] Real Gemini API returned response of length ${responseText.length}`);
+        const responseText = response.response.candidates?.[0]?.content?.parts?.[0]?.text || "Kunde inte generera svar från Vertex AI.";
+        console.log(`[COPILOT] Vertex AI returned response of length ${responseText.length}`);
         return res.json({ response: responseText });
-      } else {
-        const errText = await apiRes.text();
-        console.error(`[COPILOT] Gemini API returned error: ${errText}`);
+      } catch (vertexErr: any) {
+        console.error("[COPILOT] Vertex AI generation failed, falling back to local simulation:", vertexErr.message);
       }
     }
 

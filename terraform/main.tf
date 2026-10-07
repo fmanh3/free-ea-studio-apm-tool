@@ -62,6 +62,26 @@ resource "google_firestore_database" "ea_document_db" {
   type        = "FIRESTORE_NATIVE"
 }
 
+# Service Account for the Cloud Run App to enable ADC with Least Privilege
+resource "google_service_account" "free_apm_sa" {
+  account_id   = "free-apm-sa"
+  display_name = "Dedicated Service Account for Free APM Cloud Run App"
+}
+
+# Grant Vertex AI User role to the custom service account
+resource "google_project_iam_member" "vertex_ai_user" {
+  project = var.gcp_project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.free_apm_sa.email}"
+}
+
+# Grant Firestore (Datastore User) role to the custom service account
+resource "google_project_iam_member" "firestore_user" {
+  project = var.gcp_project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.free_apm_sa.email}"
+}
+
 # 3. Google Cloud Run Service for the Unified App (Serving both Static Frontend and Express API)
 resource "google_cloud_run_service" "free_apm_app" {
   name     = "free-apm-app"
@@ -69,6 +89,7 @@ resource "google_cloud_run_service" "free_apm_app" {
 
   template {
     spec {
+      service_account_name = google_service_account.free_apm_sa.email
       containers {
         image = "europe-west1-docker.pkg.dev/joakim-hansson-lab/cloud-run-source-deploy/free-apm-app:latest"
         

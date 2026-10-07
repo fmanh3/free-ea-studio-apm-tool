@@ -486,6 +486,23 @@ export default function ApmLensApp() {
   const [selectedQuestion, setSelectedQuestion] = useState<string>("SÖM-01");
   const [timeFilter, setTimeFilter] = useState<string>("ALL");
   const [lifecycleViewMode, setLifecycleViewMode] = useState<"board" | "timeline">("board");
+  const [currentYear, setCurrentYear] = useState<number>(2026);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+
+  useEffect(() => {
+    let interval: any = null;
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setCurrentYear(prev => {
+          if (prev >= 2029) return 2026;
+          return prev + 1;
+        });
+      }, 1500);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPlaying]);
   
   // AI Copilot state
   const [chatHistory, setChatHistory] = useState<Array<{ sender: "user" | "ai"; text: string; query?: string }>>([
@@ -716,33 +733,34 @@ export default function ApmLensApp() {
   const [nodes, setNodes] = useState<EANode[]>(SEEDED_NODES);
   const [edges, setEdges] = useState<EAEdge[]>(SEEDED_EDGES);
 
-  useEffect(() => {
-    const fetchGraphData = async () => {
-      try {
-        const token = localStorage.getItem("labb_token") || "";
-        const headers = {
-          "Authorization": `Bearer ${token}`
-        };
-        const [resNodes, resEdges] = await Promise.all([
-          fetch(getApiUrl("/api/graph/nodes"), { headers }),
-          fetch(getApiUrl("/api/graph/edges"), { headers })
-        ]);
-        if (resNodes.ok && resEdges.ok) {
-          const fetchedNodes = await resNodes.json();
-          const fetchedEdges = await resEdges.json();
-          if (fetchedNodes.length > 0) {
-            setNodes(fetchedNodes);
-          }
-          if (fetchedEdges.length > 0) {
-            setEdges(fetchedEdges);
-          }
+  const loadGraphData = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("labb_token") || "";
+      const headers = {
+        "Authorization": `Bearer ${token}`
+      };
+      const [resNodes, resEdges] = await Promise.all([
+        fetch(getApiUrl("/api/graph/nodes"), { headers }),
+        fetch(getApiUrl("/api/graph/edges"), { headers })
+      ]);
+      if (resNodes.ok && resEdges.ok) {
+        const fetchedNodes = await resNodes.json();
+        const fetchedEdges = await resEdges.json();
+        if (fetchedNodes.length > 0) {
+          setNodes(fetchedNodes);
         }
-      } catch (err) {
-        console.error("Failed to load graph data from backend, using local seeder fallback", err);
+        if (fetchedEdges.length > 0) {
+          setEdges(fetchedEdges);
+        }
       }
-    };
-    fetchGraphData();
+    } catch (err) {
+      console.error("Failed to load graph data from backend, using local seeder fallback", err);
+    }
   }, []);
+
+  useEffect(() => {
+    loadGraphData();
+  }, [loadGraphData]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [copilotQuery, setCopilotQuery] = useState("");
@@ -1227,18 +1245,34 @@ export default function ApmLensApp() {
               return val === 1;
             };
 
+            // Heuristics: Automatic classification if fields are missing for Applikation/System
+            let tempoValue = row["Tempo (Månader)"] !== undefined ? Number(row["Tempo (Månader)"]) : undefined;
+            if ((type === "Applikation" || type === "System") && (tempoValue === undefined || isNaN(tempoValue))) {
+              tempoValue = 12; // default 12m for apps/systems
+            }
+
+            let criticalityValue = row.Kritikalitet !== undefined ? String(row.Kritikalitet) : undefined;
+            if ((type === "Applikation" || type === "System") && !criticalityValue) {
+              criticalityValue = "Medium";
+            }
+
+            let techDebtValue = row["Teknisk Skuld"] !== undefined ? String(row["Teknisk Skuld"]) : undefined;
+            if ((type === "Applikation" || type === "System") && !techDebtValue) {
+              techDebtValue = "Low";
+            }
+
             importedNodes.push({
               id: row.ID || row.id || `node-imported-${Date.now()}-${rIdx}`,
               type,
               name,
               description: row.Beskrivning || row.description || row.Description || "",
-              ...(row["Tempo (Månader)"] !== undefined && { tempo: Number(row["Tempo (Månader)"]) }),
-              ...(row.Kritikalitet !== undefined && { criticality: String(row.Kritikalitet) }),
-              ...(row["Teknisk Skuld"] !== undefined && { techDebt: String(row["Teknisk Skuld"]) }),
-              ...(row.Säkerhetsklass !== undefined && { security: String(row.Säkerhetsklass) }),
-              ...(row["GDPR-känsligt"] !== undefined && { gdpr: parseBoolean(row["GDPR-känsligt"]) }),
-              ...(row["SLA Tillgänglighet"] !== undefined && { slaAvailability: String(row["SLA Tillgänglighet"]) }),
-              ...(row["Avtals-Referens"] !== undefined && { contractUrl: String(row["Avtals-Referens"]) }),
+              tempo: tempoValue,
+              criticality: criticalityValue,
+              techDebt: techDebtValue,
+              security: row.Säkerhetsklass !== undefined ? String(row.Säkerhetsklass) : undefined,
+              gdpr: row["GDPR-känsligt"] !== undefined ? parseBoolean(row["GDPR-känsligt"]) : undefined,
+              slaAvailability: row["SLA Tillgänglighet"] !== undefined ? String(row["SLA Tillgänglighet"]) : undefined,
+              contractUrl: row["Avtals-Referens"] !== undefined ? String(row["Avtals-Referens"]) : undefined,
               state: "AsIs",
               action: "Tolerate"
             });
@@ -1246,21 +1280,79 @@ export default function ApmLensApp() {
           });
         });
 
-        if (totalImported === 0) {
-          alert("Inga matchande EA-objekt (flikar) hittades i filen. Vänligen verifiera att flikarna är namngivna efter svenska objekttyper (ex: Applikationer, Produkter).");
+        // Parse relations/edges from sheets named "Relationer" or similar
+        const importedEdges: EAEdge[] = [];
+        let totalEdgesImported = 0;
+
+        workbook.SheetNames.forEach(sheetName => {
+          const nameTrimmed = sheetName.trim();
+          if (["Relationer", "Kopplingar", "Relations", "Edges"].includes(nameTrimmed)) {
+            const sheet = workbook.Sheets[sheetName];
+            const rawRows = XLSX.utils.sheet_to_json<any>(sheet);
+            
+            rawRows.forEach((row, rIdx) => {
+              const sourceId = row["Källa (Source ID)"] || row.sourceId || row.SourceId || row.Source || "";
+              const targetId = row["Mål (Target ID)"] || row.targetId || row.TargetId || row.Target || "";
+              const type = row["Typ (Type)"] || row.type || row.Type || "INTEGRATES";
+              
+              if (!sourceId || !targetId) return;
+
+              importedEdges.push({
+                id: row.ID || row.id || `edge-imported-${Date.now()}-${rIdx}`,
+                sourceId,
+                targetId,
+                type: type as any,
+                coupling: row["Koppling (Coupling)"] !== undefined ? Number(row["Koppling (Coupling)"]) : 0.5,
+                kontrakt: row["Kontrakt (Contract)"] || row.contract || row.Contract || "",
+                drag: row.Drag || row.drag || undefined
+              });
+              totalEdgesImported++;
+            });
+          }
+        });
+
+        if (totalImported === 0 && totalEdgesImported === 0) {
+          alert("Ingen giltig EA-data (noder eller relationer) hittades i kalkylbladet. Säkra att dina flikar är korrekt namngivna.");
           return;
         }
 
-        // Merge imported nodes by replacing duplicates (same ID) and appending new ones
-        setNodes(prev => {
-          const filteredPrev = prev.filter(n => !importedNodes.some(imp => imp.id === n.id));
-          return [...filteredPrev, ...importedNodes];
-        });
+        // Send additive bulk import to backend API
+        const performBulkImport = async () => {
+          try {
+            const token = localStorage.getItem("labb_token") || "";
+            const res = await fetch(getApiUrl("/api/graph/bulk-import"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                nodes: importedNodes,
+                edges: importedEdges
+              })
+            });
 
-        setChatHistory(prev => [
-          ...prev,
-          { sender: "ai", text: `Import lyckades! Läste in ${totalImported} dekopplade noder från spreadsheet-dokumentet och synkroniserade dem i grafen.` }
-        ]);
+            if (res.ok) {
+              const data = await res.json();
+              console.log("[BULK IMPORT SUCCESS]", data.message);
+              // Re-fetch graph state from backend to synchronize correctly!
+              await loadGraphData();
+              
+              setChatHistory(prev => [
+                ...prev,
+                { sender: "ai", text: `Import lyckades! Läste in ${totalImported} noder och ${totalEdgesImported} kopplingar från dokumentet och synkroniserade dem additivt i grafdatabasen.` }
+              ]);
+            } else {
+              const errData = await res.json();
+              alert(`Importen avvisades av servern: ${errData.error}`);
+            }
+          } catch (err: any) {
+            console.error("Bulk import request failed", err);
+            alert(`Nätverksfel vid import: ${err.message}`);
+          }
+        };
+
+        performBulkImport();
 
       } catch (err: any) {
         alert(`Kunde inte läsa in ODS/Excel-filen. Fel: ${err.message}`);
@@ -2953,9 +3045,75 @@ export default function ApmLensApp() {
                     </div>
                   ) : (
                     /* timeline VIEW (Gantt-inspired action timeline) */
-                    <div className="space-y-4">
+                    <div className="space-y-4 animate-fadeIn">
+                      
+                      {/* Timeline Player Scrubber Control Bar */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 flex flex-col sm:flex-row items-center gap-4 justify-between select-none">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setIsPlaying(!isPlaying)}
+                            className={`p-2.5 rounded-lg font-bold text-white transition-all flex items-center justify-center gap-2 ${
+                              isPlaying 
+                                ? "bg-amber-600 hover:bg-amber-500 shadow shadow-amber-600/10" 
+                                : "bg-purple-600 hover:bg-purple-500 shadow shadow-purple-600/10"
+                            }`}
+                            title={isPlaying ? "Pausa animation" : "Spela tidslinje-roadmap"}
+                          >
+                            {isPlaying ? (
+                              <>
+                                <svg className="w-3.5 h-3.5 text-white fill-current" viewBox="0 0 24 24">
+                                  <rect x="5" y="4" width="4" height="16" rx="1" />
+                                  <rect x="15" y="4" width="4" height="16" rx="1" />
+                                </svg>
+                                <span className="text-[10px] uppercase font-extrabold tracking-wider hidden sm:inline">Pausa</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3.5 h-3.5 text-white" />
+                                <span className="text-[10px] uppercase font-extrabold tracking-wider hidden sm:inline">Spela</span>
+                              </>
+                            )}
+                          </button>
+
+                          <div className="text-left">
+                            <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold font-mono block">Aktivt år i Simulering</span>
+                            <span className="text-sm font-black text-purple-400 font-mono tracking-wide">{currentYear}</span>
+                          </div>
+                        </div>
+
+                        {/* Slider bar */}
+                        <div className="flex-1 w-full flex items-center gap-3">
+                          <span className="text-[10px] font-bold text-slate-500 font-mono">2026</span>
+                          <input
+                            type="range"
+                            min="2026"
+                            max="2029"
+                            step="1"
+                            value={currentYear}
+                            onChange={(e) => {
+                              setCurrentYear(Number(e.target.value));
+                              setIsPlaying(false);
+                            }}
+                            className="w-full accent-purple-600 bg-slate-900 rounded-lg h-2 cursor-pointer focus:outline-none"
+                          />
+                          <span className="text-[10px] font-bold text-slate-500 font-mono">2029+</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentYear(2026);
+                            setIsPlaying(false);
+                          }}
+                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 text-[10px] font-bold uppercase tracking-wider text-slate-400 rounded-lg border border-slate-800 transition-colors"
+                        >
+                          Återställ
+                        </button>
+                      </div>
+
                       {/* Timeline Header Grid */}
-                      <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono border-b border-slate-800 pb-2">
+                      <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono border-b border-slate-800 pb-2 pt-2">
                         <div className="col-span-4 text-left pl-3">Arkitektur-Asset (System / App)</div>
                         <div className="col-span-2 border-l border-slate-800/50">2026</div>
                         <div className="col-span-2 border-l border-slate-800/50">2027</div>
@@ -2971,41 +3129,77 @@ export default function ApmLensApp() {
                             const action = n.action || "Tolerate";
                             const state = n.state || "AsIs";
 
-                            // Determine start and width of the timeline bar
-                            // Timeline total width is col-span-8. Let's map it visually.
+                            // Dynamic calculations based on currentYear and asset lifecycle metadata
                             let barStyle = "";
                             let phaseLabel = "";
                             let barColorClass = "";
+                            let opacityClass = "opacity-100";
 
                             if (state === "Target") {
-                              // Starts in mid 2027 (col-span-3 to col-span-12)
-                              barStyle = "col-start-8 col-span-5";
-                              phaseLabel = "Implementeras & Driftsätts";
-                              barColorClass = "bg-gradient-to-r from-emerald-600 to-teal-500 text-emerald-100 shadow-lg shadow-emerald-950/20 border border-emerald-500/20";
+                              if (currentYear === 2026) {
+                                barStyle = "col-start-1 col-span-8";
+                                phaseLabel = "Planerad nyetablering (Målbild)";
+                                barColorClass = "bg-slate-950/20 text-slate-600 border border-slate-900/50 border-dashed italic text-center";
+                                opacityClass = "opacity-30";
+                              } else if (currentYear === 2027) {
+                                barStyle = "col-start-3 col-span-2";
+                                phaseLabel = "Implementation & Driftsättning";
+                                barColorClass = "bg-amber-500/10 text-amber-300 border border-amber-500/20 animate-pulse";
+                                opacityClass = "opacity-100";
+                              } else {
+                                barStyle = "col-start-5 col-span-4";
+                                phaseLabel = "MÅLARKITEKTUR AKTIV (Säkrad med API-kontrakt)";
+                                barColorClass = "bg-gradient-to-r from-emerald-600 to-teal-500 text-emerald-100 shadow shadow-emerald-950/20 border border-emerald-500/20";
+                                opacityClass = "opacity-100";
+                              }
                             } else if (action === "Eliminate") {
-                              // Sunsetted in mid 2027
-                              barStyle = "col-start-5 col-span-3";
-                              phaseLabel = "Aktiv Fas / Avveckling pågår";
-                              barColorClass = "bg-gradient-to-r from-rose-600/80 to-rose-700/40 text-rose-200 border border-rose-500/20";
+                              if (currentYear === 2026) {
+                                barStyle = "col-start-1 col-span-2";
+                                phaseLabel = "Aktivt driftsläge (Hög skuld)";
+                                barColorClass = "bg-slate-800 text-slate-300 border border-slate-700";
+                                opacityClass = "opacity-100";
+                              } else if (currentYear === 2027) {
+                                barStyle = "col-start-3 col-span-2";
+                                phaseLabel = "Avveckling pågår (COBOL)";
+                                barColorClass = "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse";
+                                opacityClass = "opacity-100";
+                              } else {
+                                barStyle = "col-start-1 col-span-8";
+                                phaseLabel = "NEDSTÄNGD & AVVECKLAD (Retired)";
+                                barColorClass = "bg-slate-950 text-slate-600 border border-slate-900/50 italic text-center font-normal";
+                                opacityClass = "opacity-40";
+                              }
                             } else if (action === "Migrate") {
-                              // Migrated by end 2027
-                              barStyle = "col-start-5 col-span-4";
-                              phaseLabel = "Flyttfas / Ny lösning införs";
-                              barColorClass = "bg-gradient-to-r from-amber-600 to-orange-500 text-amber-100 border border-amber-500/20";
+                              if (currentYear === 2026) {
+                                barStyle = "col-start-1 col-span-2";
+                                phaseLabel = "Aktivt driftsläge (Migrering planerad)";
+                                barColorClass = "bg-slate-800 text-slate-300 border border-slate-700";
+                                opacityClass = "opacity-100";
+                              } else if (currentYear === 2027) {
+                                barStyle = "col-start-3 col-span-2";
+                                phaseLabel = "Övergångsfas / Molnmigrering";
+                                barColorClass = "bg-amber-600/25 text-amber-300 border border-amber-500/20 animate-pulse";
+                                opacityClass = "opacity-100";
+                              } else {
+                                barStyle = "col-start-1 col-span-8";
+                                phaseLabel = "MIGRERAD / SYSTEMET AVSTÄNGT";
+                                barColorClass = "bg-slate-950 text-slate-600 border border-slate-900/50 italic text-center font-normal";
+                                opacityClass = "opacity-40";
+                              }
                             } else if (action === "Tolerate") {
-                              // Steady state till mid 2028
-                              barStyle = "col-start-5 col-span-5";
-                              phaseLabel = "Tolererat driftsläge";
-                              barColorClass = "bg-gradient-to-r from-slate-700 to-slate-800 text-slate-300 border border-slate-700/50";
+                              barStyle = "col-start-1 col-span-8";
+                              phaseLabel = "Tolererat driftsläge (Stabil förvaltning)";
+                              barColorClass = "bg-slate-800/80 text-slate-300 border border-slate-700/50";
+                              opacityClass = "opacity-80";
                             } else if (action === "Invest") {
-                              // Growing strategic asset till 2029+
-                              barStyle = "col-start-5 col-span-8";
-                              phaseLabel = "Strategisk Investering & Livskraft";
-                              barColorClass = "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/20 border border-purple-500/20";
+                              barStyle = "col-start-1 col-span-8";
+                              phaseLabel = "Strategisk Investering (Kontinuerlig leverans)";
+                              barColorClass = "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow shadow-purple-950/20 border border-purple-500/20";
+                              opacityClass = "opacity-100";
                             }
 
                             return (
-                              <div key={n.id} className="grid grid-cols-12 gap-2 items-center bg-slate-950/30 hover:bg-slate-900/40 p-2 rounded-lg border border-slate-800/40 hover:border-slate-800 transition-all">
+                              <div key={n.id} className={`grid grid-cols-12 gap-2 items-center bg-slate-950/30 hover:bg-slate-900/40 p-2 rounded-lg border border-slate-800/40 hover:border-slate-800 transition-all ${opacityClass}`}>
                                 <div className="col-span-4 pl-2">
                                   <div className="flex items-center gap-1.5">
                                     <span className="text-xs font-bold text-white truncate">{n.name}</span>

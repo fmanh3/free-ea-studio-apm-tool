@@ -7,8 +7,8 @@
 
 ## 🚀 System Roadmap (Vår TODO-lista)
 
-- [ ] 🤖 **Fas 5: Gemini LLM RAG-Säkring i Produktion**
-  * *Mål:* Ansluta en skarp `GEMINI_API_KEY` miljövariabel i GCP Cloud Run för att aktivera den fulla, oinskränkta generativa AI-analysen. Detta låter chefsarkitekter ställa komplexa, djupt förankrade arkitekturfrågor direkt mot den faktiska Neo4j-grafen.
+- [x] 🤖 **Fas 5: Gemini LLM RAG-Säkring i Produktion (Säkrad med Vertex AI och ADC)**
+  * *Mål:* Ansluta till Google Vertex AI via ett säkert dedikerat Service Account och Application Default Credentials (ADC). Detta låter chefsarkitekter ställa komplexa, djupt förankrade arkitekturfrågor direkt mot den faktiska Neo4j-grafen eller den in-memory fallback-grafen på ett enterprise-säkert sätt.
 - [ ] 📈 **Fas 6: Interaktiv Tidslinje-Roadmap-Spelare**
   * *Mål:* Skapa en interaktiv "Play"-knapp på TIME-tidslinjen i APM Lens. Denna ska animera hur system avvecklas, ersätts och flyttas asynkront under åren 2026–2029 baserat på de beslut och ADR:er som fattats i Scenariomatrisen.
 - [ ] 📦 **Fas 7: Storskalig Data-Import & Excel Ingestion**
@@ -66,8 +66,8 @@ Om du är en AI-agent (t.ex. Gemini CLI, Claude Engineer, GitHub Copilot) som ha
    NEO4J_URI="neo4j+s://<your-auradb-id>.databases.neo4j.io"
    NEO4J_USER="neo4j"
    NEO4J_PASSWORD="<your-password>"
-   # Valfritt: Gemini-anslutning
-   GEMINI_API_KEY="<your-gemini-api-key>"
+   # Valfritt: Gemini-anslutning via Vertex AI (ADC)
+   # Kör 'gcloud auth application-default login' lokalt på din maskin för att konfigurera ADC och ansluta till Vertex AI utan API-nyckel!
    ```
 
 4. **Kompilera frontend:**
