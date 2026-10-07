@@ -69,3 +69,54 @@ Vår datamodell sparar dina noder som semantiska objekt. Detta gör att du kan u
 1.  Skriv in namnet på ett system (t.ex. **`CRM Core`**) i den lila sökrutan i sidomenyn till vänster och klicka på Sök.
 2.  Systemet söker omedelbart igenom alla dina sparade boards och visar **endast de boards där detta system är inritat** just nu!
 3.  Detta ger dig ett omedelbart svar på förändringsanalyser (Blast Radius) på bråkdelen av en sekund!
+
+---
+
+## 📈 4. APM Lens: Tidslinje & Simulering (Fas 6)
+
+I APM Lens-appen kan du under fliken **"Livscykel & Portfölj"** (fråga `A1-02` (TIME)) växla över från Kanban-vyn till **"TIME-Tidslinje"**.
+
+### 🎮 Hur du kör tidslinje-spelaren:
+1.  **Kontrollpanelen:** Överst på tidslinjen finns en integrerad tids-scrubber.
+2.  **Spela / Pausa:** Klicka på den lila **"Spela"**-knappen för att påbörja simuleringen. Årtalet stegar då automatiskt från 2026 till 2029 var 1.5:e sekund.
+3.  **Manuellt sökreglage:** Dra i slider-reglaget för att manuellt frysa tiden vid ett specifikt år och inspektera landskapets status.
+4.  **Reaktiva fas-skiftningar under spelningen:**
+    *   **2026:** Befintligt bestånd visas. Planerade målsystem är svaga/streckade.
+    *   **2027 (Övergångsår):** Avvecklingssystem (`Eliminate`) blir röda och blinkar (*Avveckling pågår*). Flytt-system (`Migrate`) blir gula. Målsystem (`Target`) visar *Implementation pågår*.
+    *   **2028-2029:** Avvecklade system försvinner/blir svaga (*Retired*). Målsystemen lyser starkt gröna och markeras som *MÅLARKITEKTUR AKTIV*.
+
+---
+
+## 📦 5. APM Lens: Storskalig Data-Import (Fas 7)
+
+Verktyget stöder storskalig, additiv import av hela ditt arkitektur-register (noder och relationer) via kalkylblad (Excel/ODS).
+
+### 📝 Kalkylbladets struktur:
+*   **Noder (Flikar per objekttyp):** Skapa flikar som matchar dina svenska objekttyper (ex: `Applikationer`, `Produkter`, `System`). Kolumner som läses av är: `ID`, `Namn`, `Beskrivning`, `Kritikalitet`, `Tempo (Månader)` och `Teknisk Skuld`.
+*   **Relationer (Relations-flik):** Skapa en flik namngiven **`Relationer`** eller **`Edges`** för att länka samman dina noder. Kolumner: `Källa (Source ID)`, `Mål (Target ID)`, `Typ (Type)` (ex. *INTEGRATES*, *REALISES*), `Koppling (Coupling)` (0.05 - 1.0) samt `Kontrakt (Contract)`.
+
+### 🧠 Intelligenta Heuristiker (Automatisk klassning):
+Om kalkylbladet saknar metadata fyller importören automatiskt i säkra standardvärden:
+*   *Saknat tempo:* Klassas till standarden **`12`** månader.
+*   *Saknad kritikalitet:* Klassas till standarden **`Medium`**.
+*   *Saknad teknisk skuld:* Klassas till standarden **`Low`**.
+
+### 🔁 Additiv synkronisering (Merge):
+När du laddar upp filen skickas datan till vår bulk-import endpoint. Befintliga noder/relationer skrivs över och nya läggs till. **Ingen existerande data raderas**, vilket gör det helt säkert att rita vidare.
+
+---
+
+## 🤖 6. AI-Copilot Chat via Vertex AI (Fas 5)
+
+Vår inbyggda arkitekt-Copilot **AURA** hjälper dig att ställa frågor i fritext direkt mot ditt arkitekturlandskap.
+
+### 🔒 Enterprise-Säkerhet (ADC):
+*   Tjänsten använder **Application Default Credentials (ADC)** och körs under det dedikerade service-kontot `free-apm-sa` i Google Cloud. Inga API-nycklar lagras i källkoden.
+*   **Lokal utveckling:** Kör `gcloud auth application-default login` lokalt på din maskin för att ansluta säkert mot Vertex AI.
+
+### 💡 Exempel på frågor du kan ställa till AURA:
+*   *"Vilka system har det högsta Blast Indexet i vår organisation?"*
+*   *"Vilka system bär personuppgifter och påverkas av GDPR?"*
+*   *"Kan du hitta kritiska skjuvsömmar i vårt integrationsmönster?"*
+*   *"Vad händer om vi avvecklar Gamla Reskontran?"* (Kör en omedelbar Blast Radius-traversering under huven).
+
