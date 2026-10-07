@@ -1174,12 +1174,46 @@ export default function ApmLensApp() {
 
   // Legacy useMemo blocks removed to support decoupled graph structure
 
-  const handlePresetQuery = (prompt: string, queryStr: string) => {
+  const handlePresetQuery = async (prompt: string, queryStr: string) => {
+    // Add user message to UI instantly for feedback
     setChatHistory(prev => [
       ...prev,
-      { sender: "user", text: prompt },
-      { sender: "ai", text: `Kör graf-analys mot Neo4j... funkar OK!`, query: queryStr }
+      { sender: "user", text: prompt }
     ]);
+
+    try {
+      const token = localStorage.getItem("labb_token") || "";
+      const res = await fetch(getApiUrl("/api/copilot/chat"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          message: prompt,
+          query: queryStr
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setChatHistory(prev => [
+          ...prev,
+          { sender: "ai", text: data.response, query: queryStr }
+        ]);
+      } else {
+        setChatHistory(prev => [
+          ...prev,
+          { sender: "ai", text: "Kunde tyvärr inte ansluta till Gemini-motorn på backenden för tillfället. Kör i lokalt hybrid-läge.", query: queryStr }
+        ]);
+      }
+    } catch (err) {
+      console.error("Copilot chat request failed", err);
+      setChatHistory(prev => [
+        ...prev,
+        { sender: "ai", text: "Ett nätverksfel uppstod vid kommunikation med din AI-Copilot.", query: queryStr }
+      ]);
+    }
   };
 
   // High-signal Summary stats card
