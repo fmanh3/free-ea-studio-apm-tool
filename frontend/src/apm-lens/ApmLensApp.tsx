@@ -499,42 +499,139 @@ export default function ApmLensApp() {
   const fallbackScenarios = [
     {
       id: "sc-1",
-      name: "Betalningskonsolidering (Avveckling av Betalningsmotor)",
-      background: "Betalningsmotorn bär kritisk betalningshantering men har kritisk teknisk skuld. Vi måste hitta ett alternativ för att ersätta den innan 2027.",
+      name: "Avveckling av Gamla Reskontran (Mainframe Core)",
+      background: "Vår 35 år gamla stordatorbaserade reskontra (COBOL) bär kritisk data men har enorm teknisk skuld. Vi måste hitta ett alternativ för att avveckla och migrera den innan 2027.",
       status: "Under utredning",
-      affectedSystems: ["Betalningsmotor", "Gamla Reskontran"],
+      affectedSystems: ["Kundreskontra System", "Utbetalningsmotor Core"],
       decisions: [
         {
           id: "dec-1",
-          title: "Val av ny betalningsplattform",
-          question: "Hur bör vi ersätta den gamla Betalningsmotorn för att säkra prestanda och minimera den tekniska skulden?",
+          title: "Val av ny reskontraplattform",
+          question: "Hur bör vi ersätta den gamla stordatorreskontran för att reducera teknisk skuld och uppfylla GDPR?",
           status: "Under utredning",
           criteria: [
-            { key: "crit-1", name: "Mognadsgrad & Framtidssäkring" },
-            { key: "crit-2", name: "Integrationskomplexitet (Blast Radius)" },
-            { key: "crit-3", name: "GDPR & Personuppgiftssäkerhet" }
+            { key: "crit-1", name: "Reducering av Tekniskt Skuld" },
+            { key: "crit-2", name: "Lågt Skjuvningsbetyg (Shearing)" },
+            { key: "crit-3", name: "GDPR & Data-isolering" },
+            { key: "crit-4", name: "Migreringshastighet (Tempo)" }
           ],
           alternatives: [
             {
               id: "alt-1",
-              name: "Alt A: Egenutvecklad mikrotjänst i Azure (CloudPay v2)",
+              name: "Alt A: Totalmoln-klyvning (Event-driven Azure Hub)",
+              description: "Vi bygger en modern, egenutvecklad händelsestyrd reskontrahub i Azure Container Apps. Ger full kontroll.",
               isRecommended: true,
               isApproved: false,
               bedomningar: [
-                { criterionKey: "crit-1", score: 5, motivering: "Mycket framtidssäkert, helt på vår egen molnarkitektur." },
-                { criterionKey: "crit-2", score: 3, motivering: "Hög initial integrationskostnad eftersom vi måste återskapa alla gamla kopplingar." },
-                { criterionKey: "crit-3", score: 5, motivering: "Full kontroll över dataflöden, lätt att kryptera PII." }
+                { criterionKey: "crit-1", score: 5, motivering: "Raderar ut all COBOL-skuld helt och hållet." },
+                { criterionKey: "crit-2", score: 5, motivering: "Sänker skjuvningen till 0.05 genom att anpassa sig efter webbens tempo." },
+                { criterionKey: "crit-3", score: 5, motivering: "Full kontroll över dataflöden, lätt till genomföra GDPR-radering." },
+                { criterionKey: "crit-4", score: 2, motivering: "Mycket komplex utveckling, tar minst 18 månader att bygga." }
               ]
             },
             {
               id: "alt-2",
-              name: "Alt B: Gå helt över till extern SaaS (SaaS-Pay)",
+              name: "Alt B: Tolerera & Wrapa (REST API Adapter)",
+              description: "Vi behåller COBOL-kärnan men bygger en REST-adapter ovanpå för att möta webbens behov.",
               isRecommended: false,
               isApproved: false,
               bedomningar: [
-                { criterionKey: "crit-1", score: 4, motivering: "Stabil leverantör, men vi blir inlåsta i deras roadmap." },
-                { criterionKey: "crit-2", score: 4, motivering: "Färdiga API-connectorer finns, men begränsad flexibilitet." },
-                { criterionKey: "crit-3", score: 3, motivering: "Externa personuppgifter, kräver noggrant DPA-avtal." }
+                { criterionKey: "crit-1", score: 2, motivering: "Stordatorns tekniska skuld kvarstår orörd." },
+                { criterionKey: "crit-2", score: 3, motivering: "Adaptern tolererar klyftan, men minskar inte den underliggande risken." },
+                { criterionKey: "crit-3", score: 2, motivering: "Svårt att garantera radering i gamla on-premise tabeller." },
+                { criterionKey: "crit-4", score: 5, motivering: "Blixtsnabb lösning som kan driftsättas på 3 månader." }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "sc-2",
+      name: "Konsolidering av Kundprofil-Data (CRM-harmonisering)",
+      background: "Kunddata är splittrad mellan Mina Sidor-portalen, CRM-systemet och lokala register, vilket leder till synkroniseringsfördröjningar och regulatoriska compliance-risker.",
+      status: "Under utredning",
+      affectedSystems: ["Mina Sidor Portal", "CRM Core"],
+      decisions: [
+        {
+          id: "dec-2",
+          title: "Etablering av Master-Data Hub",
+          question: "Var ska organisationens officiella kundprofil-mästare ligga för att säkra regelefterlevnad?",
+          status: "Under utredning",
+          criteria: [
+            { key: "crit-1", name: "Efterlevnad (GDPR radering)" },
+            { key: "crit-2", name: "SLA & Synkhastighet" },
+            { key: "crit-3", name: "Systemkomplexitet (Antal flöden)" }
+          ],
+          alternatives: [
+            {
+              id: "alt-2-1",
+              name: "Alt A: Centraliserad MDM Hub (Master Data)",
+              description: "Vi bygger en central, auktoritativ Master-Data Management-hub i vårt moln för alla kundprofiler.",
+              isRecommended: true,
+              isApproved: false,
+              bedomningar: [
+                { criterionKey: "crit-1", score: 5, motivering: "Auktoritativ källa, ger 100% spårbarhet och enkel radering." },
+                { criterionKey: "crit-2", score: 4, motivering: "Hög prestanda via läscachning i molnet." },
+                { criterionKey: "crit-3", score: 4, motivering: "Kräver omdirigering av alla existerande point-to-point flöden." }
+              ]
+            },
+            {
+              id: "alt-2-2",
+              name: "Alt B: Event-Driven Kafka Synk (Distribuerad)",
+              description: "Vi låter alla system behålla sina databaser men synkar förändringar asynkront via Kafka.",
+              isRecommended: false,
+              isApproved: false,
+              bedomningar: [
+                { criterionKey: "crit-1", score: 3, motivering: "PII lagras fortfarande på several ställen, svårt att garantera fullständig audit." },
+                { criterionKey: "crit-2", score: 5, motivering: "Realtidssynk under sekunden via event streams." },
+                { criterionKey: "crit-3", score: 2, motivering: "Ökar driftskomplexiteten markant med distribuerat tillstånd." }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "sc-3",
+      name: "Resilienssäkring av Utbetalningsflödet",
+      background: "Utbetalningsmotorn bär alla kritiska finansiella transaktioner men saknar katastrofsäkring (Disaster Recovery). Om det går ner stannar hela verksamheten.",
+      status: "Under utredning",
+      affectedSystems: ["Utbetalningsmotor Core"],
+      decisions: [
+        {
+          id: "dec-3",
+          title: "Val av High-Availability Arkitektur",
+          question: "Hur uppnår vi 99.99% resiliens för vårt mest kritiska transaktionsflöde?",
+          status: "Under utredning",
+          criteria: [
+            { key: "crit-1", name: "Resiliens & Drifttid (RTO/RPO)" },
+            { key: "crit-2", name: "Årlig Driftskostnad" },
+            { key: "crit-3", name: "Påverkan på Integrationer" }
+          ],
+          alternatives: [
+            {
+              id: "alt-3-1",
+              name: "Alt A: Multi-Region Active-Active i AWS",
+              description: "Fullt redundant, distribuerat transaktionsflöde som körs aktivt i två oberoende datacenter.",
+              isRecommended: true,
+              isApproved: false,
+              bedomningar: [
+                { criterionKey: "crit-1", score: 5, motivering: "Noll sekunders nedtid (RTO=0) vid regionkrasch." },
+                { criterionKey: "crit-2", score: 1, motivering: "Mycket dyr driftskostnad (dubbla infrastrukturlicenser)." },
+                { criterionKey: "crit-3", score: 4, motivering: "Kräver global databassynk, vilket ökar källkodskomplexiteten." }
+              ]
+            },
+            {
+              id: "alt-3-2",
+              name: "Alt B: Active-Passive (Varm reserv i Azure)",
+              description: "En aktiv instans i drift med en kontinuerligt synkad reserv redo att startas vid krasch.",
+              isRecommended: false,
+              isApproved: false,
+              bedomningar: [
+                { criterionKey: "crit-1", score: 3, motivering: "15 minuters återställningstid (RTO=15m) med viss risk för transaktionsglapp." },
+                { criterionKey: "crit-2", score: 4, motivering: "Mycket kostnadseffektivt då reserven körs på sparlåga." },
+                { criterionKey: "crit-3", score: 5, motivering: "Minimal påverkan, enkla DNS-pekare swapping vid failover." }
               ]
             }
           ]
