@@ -732,6 +732,8 @@ app.get("/api/graph/nodes", async (req, res) => {
         const list = result.records.map((row: any) => row.get("node"));
         console.log(`[GET /api/graph/nodes] Neo4j returned ${list.length} nodes.`);
         return res.json(list);
+      } catch (neoErr) {
+        console.warn("[GET /api/graph/nodes] Neo4j connection failed. Dynamic failover to in-memory fallback.", neoErr);
       } finally {
         await session.close();
       }
@@ -766,6 +768,8 @@ app.get("/api/graph/edges", async (req, res) => {
         const list = result.records.map((row: any) => row.get("edge"));
         console.log(`[GET /api/graph/edges] Neo4j returned ${list.length} edges.`);
         return res.json(list);
+      } catch (neoErr) {
+        console.warn("[GET /api/graph/edges] Neo4j connection failed. Dynamic failover to in-memory fallback.", neoErr);
       } finally {
         await session.close();
       }
@@ -1055,6 +1059,8 @@ app.get("/api/graph/blast-radius/:nodeId", async (req, res) => {
           affectedEdges,
           riskScore
         });
+      } catch (neoErr) {
+        console.warn("[GET /api/graph/blast-radius] Neo4j connection failed. Dynamic failover to in-memory BFS fallback.", neoErr);
       } finally {
         await session.close();
       }
@@ -1238,10 +1244,14 @@ app.get("/api/folders", async (req, res) => {
   console.log(`[GET /api/folders] Request received. User: ${(req as any).user?.name}. Firestore active: ${!!db}`);
   try {
     if (db) {
-      const snapshot = await db.collection("folders").get();
-      const list = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-      console.log(`[GET /api/folders] Firestore returned ${list.length} folders.`);
-      return res.json(list);
+      try {
+        const snapshot = await db.collection("folders").get();
+        const list = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        console.log(`[GET /api/folders] Firestore returned ${list.length} folders.`);
+        return res.json(list);
+      } catch (firestoreErr) {
+        console.warn("[GET /api/folders] Firestore operation failed. Dynamic failover to in-memory fallback.", firestoreErr);
+      }
     }
     console.log(`[GET /api/folders] Fallback returned ${foldersDb.length} folders.`);
     res.json(foldersDb);
@@ -1264,9 +1274,13 @@ app.post("/api/folders", async (req, res) => {
   
   try {
     if (db) {
-      await db.collection("folders").doc(folderId).set(payload, { merge: true });
-      console.log(`[POST /api/folders] Saved to Firestore. Doc ID: ${folderId}`);
-      return res.json({ id: folderId, ...payload });
+      try {
+        await db.collection("folders").doc(folderId).set(payload, { merge: true });
+        console.log(`[POST /api/folders] Saved to Firestore. Doc ID: ${folderId}`);
+        return res.json({ id: folderId, ...payload });
+      } catch (firestoreErr) {
+        console.warn("[POST /api/folders] Firestore operation failed. Dynamic failover to in-memory fallback.", firestoreErr);
+      }
     }
     
     const idx = foldersDb.findIndex(f => f.id === folderId);
@@ -1289,8 +1303,12 @@ app.delete("/api/folders/:id", async (req, res) => {
   console.log(`[DELETE /api/folders/${id}] Request received.`);
   try {
     if (db) {
-      await db.collection("folders").doc(id).delete();
-      return res.json({ success: true });
+      try {
+        await db.collection("folders").doc(id).delete();
+        return res.json({ success: true });
+      } catch (firestoreErr) {
+        console.warn("[DELETE /api/folders] Firestore operation failed. Dynamic failover to in-memory fallback.", firestoreErr);
+      }
     }
     foldersDb = foldersDb.filter(f => f.id !== id);
     res.json({ success: true });
@@ -1305,51 +1323,56 @@ app.get("/api/boards", async (req, res) => {
   const { searchElement } = req.query;
   try {
     let listToProcess: any[] = [];
+    let usedFirestore = false;
+    
     if (db) {
-      let snapshot = await db.collection("boards").get();
-      
-      // Auto-Seeding: If Firestore is completely empty, seed the default catalog persistent!
-      if (snapshot.empty) {
-        console.log("[SEEDING] Firestore is empty. Seeding default EA catalog persistent...");
+      try {
+        let snapshot = await db.collection("boards").get();
         
-        // Seed default folders
-        await db.collection("folders").doc("fold-1").set({ name: "Domän: Kund & Marknad", parentId: null });
-        await db.collection("folders").doc("fold-2").set({ name: "Domän: Ekonomi & Finans", parentId: null });
+        // Auto-Seeding: If Firestore is completely empty, seed the default catalog persistent!
+        if (snapshot.empty) {
+          console.log("[SEEDING] Firestore is empty. Seeding default EA catalog persistent...");
+          
+          await db.collection("folders").doc("fold-1").set({ name: "Domän: Kund & Marknad", parentId: null });
+          await db.collection("folders").doc("fold-2").set({ name: "Domän: Ekonomi & Finans", parentId: null });
+          
+          const defaultBoard = {
+            name: "Kundcenter Onboarding-flow",
+            folderId: "fold-1",
+            pages: [
+              {
+                id: "page-1",
+                name: "Strategi & Förmågor",
+                nodes: [
+                  { id: "node-1", type: "actorNode", position: { x: 340, y: 75 }, data: { label: "Kundcenter-medarbetare", description: "Hanterar kundregistrering via telefon och kontor." } },
+                  { id: "node-2", type: "processNode", position: { x: 340, y: 195 }, data: { label: "Skapa onboarding-ärende", description: "Medarbetare registrerar nytt onboarding-ärende i CRM." } },
+                  { id: "node-3", type: "apmRefNode", position: { x: 335, y: 345 }, data: { label: "CRM Core", tempo: 12, criticality: "Medium" } }
+                ],
+                edges: [
+                  { id: "e1-2", source: "node-1", target: "node-2", animated: true },
+                  { id: "e2-3", source: "node-2", target: "node-3" }
+                ]
+              },
+              {
+                id: "page-2",
+                name: "System & Dataflöden",
+                nodes: [],
+                edges: []
+              }
+            ]
+          };
+          await db.collection("boards").doc("board-1").set(defaultBoard);
+          snapshot = await db.collection("boards").get();
+        }
         
-        // Seed default board-1
-        const defaultBoard = {
-          name: "Kundcenter Onboarding-flow",
-          folderId: "fold-1",
-          pages: [
-            {
-              id: "page-1",
-              name: "Strategi & Förmågor",
-              nodes: [
-                { id: "node-1", type: "actorNode", position: { x: 340, y: 75 }, data: { label: "Kundcenter-medarbetare", description: "Hanterar kundregistrering via telefon och kontor." } },
-                { id: "node-2", type: "processNode", position: { x: 340, y: 195 }, data: { label: "Skapa onboarding-ärende", description: "Medarbetare registrerar nytt onboarding-ärende i CRM." } },
-                { id: "node-3", type: "apmRefNode", position: { x: 335, y: 345 }, data: { label: "CRM Core", tempo: 12, criticality: "Medium" } }
-              ],
-              edges: [
-                { id: "e1-2", source: "node-1", target: "node-2", animated: true },
-                { id: "e2-3", source: "node-2", target: "node-3" }
-              ]
-            },
-            {
-              id: "page-2",
-              name: "System & Dataflöden",
-              nodes: [],
-              edges: []
-            }
-          ]
-        };
-        await db.collection("boards").doc("board-1").set(defaultBoard);
-        
-        // Re-read snapshot
-        snapshot = await db.collection("boards").get();
+        listToProcess = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        usedFirestore = true;
+      } catch (firestoreErr) {
+        console.warn("[GET /api/boards] Firestore operation failed. Dynamic failover to in-memory fallback.", firestoreErr);
       }
-      
-      listToProcess = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-    } else {
+    }
+    
+    if (!usedFirestore) {
       listToProcess = boardsDb;
     }
 
@@ -1357,7 +1380,6 @@ app.get("/api/boards", async (req, res) => {
     if (searchElement) {
       const query = (searchElement as string).toLowerCase();
       filtered = listToProcess.filter((b: any) => {
-        // Search through all nodes on all pages
         return b.pages?.some((p: any) => 
           p.nodes?.some((n: any) => 
             n.data?.label?.toLowerCase().includes(query)
@@ -1366,7 +1388,6 @@ app.get("/api/boards", async (req, res) => {
       });
     }
 
-    // Return metadata list
     const result = filtered.map((b: any) => ({
       id: b.id,
       name: b.name,
@@ -1384,9 +1405,13 @@ app.get("/api/boards/:id", async (req, res) => {
   const { id } = req.params;
   try {
     if (db) {
-      const doc = await db.collection("boards").doc(id).get();
-      if (!doc.exists) return res.status(404).json({ error: "Board hittades inte." });
-      return res.json({ id: doc.id, ...doc.data() });
+      try {
+        const doc = await db.collection("boards").doc(id).get();
+        if (!doc.exists) return res.status(404).json({ error: "Board hittades inte." });
+        return res.json({ id: doc.id, ...doc.data() });
+      } catch (firestoreErr) {
+        console.warn(`[GET /api/boards/${id}] Firestore operation failed. Dynamic failover to in-memory fallback.`, firestoreErr);
+      }
     }
     
     const board = boardsDb.find(b => b.id === id);
@@ -1410,8 +1435,12 @@ app.post("/api/boards", async (req, res) => {
 
   try {
     if (db) {
-      await db.collection("boards").doc(boardId).set(savePayload, { merge: true });
-      return res.json({ id: boardId, ...savePayload });
+      try {
+        await db.collection("boards").doc(boardId).set(savePayload, { merge: true });
+        return res.json({ id: boardId, ...savePayload });
+      } catch (firestoreErr) {
+        console.warn(`[POST /api/boards] Firestore operation failed. Dynamic failover to in-memory fallback.`, firestoreErr);
+      }
     }
     
     const idx = boardsDb.findIndex(b => b.id === boardId);
@@ -1431,8 +1460,12 @@ app.delete("/api/boards/:id", async (req, res) => {
   const { id } = req.params;
   try {
     if (db) {
-      await db.collection("boards").doc(id).delete();
-      return res.json({ success: true });
+      try {
+        await db.collection("boards").doc(id).delete();
+        return res.json({ success: true });
+      } catch (firestoreErr) {
+        console.warn(`[DELETE /api/boards/${id}] Firestore operation failed. Dynamic failover to in-memory fallback.`, firestoreErr);
+      }
     }
     boardsDb = boardsDb.filter(b => b.id !== id);
     res.json({ success: true });

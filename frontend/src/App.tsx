@@ -225,6 +225,12 @@ export default function App() {
           >
             Logga ut
           </button>
+
+          <span className="text-slate-700 select-none">|</span>
+
+          <span className="text-[10px] text-purple-400 font-mono font-bold" title="Lokal EA-plattformskonfiguration">
+            v0.1 &bull; Build: #204-Prod
+          </span>
         </div>
         
         <div className="flex gap-2">
