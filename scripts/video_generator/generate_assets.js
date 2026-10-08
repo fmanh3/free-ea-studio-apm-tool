@@ -89,6 +89,7 @@ async function main() {
   };
 
   // Start capture loop in background
+  const captureStartTime = Date.now();
   captureLoop();
 
   // === ACT 1: Intro (Sömkarta) ===
@@ -163,16 +164,18 @@ async function main() {
   await delay(10000);
 
   // === ACT 4: Conclusion & Outro ===
-  console.log("--- Act 4: Outro and Dashboard Stats Cards (37s - 43s) ---");
+  console.log("--- Act 4: Outro and Dashboard Stats Cards (37s - 61s) ---");
   await page.evaluate(() => {
     // Scroll back to top to showcase stats cards beautifully
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
-  await delay(6000); // Wait out the ending
+  await delay(22000); // Wait out the ending of the voiceover (increased to 22s for 61s total)
 
   // Stop capturing frames
   capturing = false;
-  console.log(`✓ Screen capture finished. Total frames rendered: ${frameCounter}`);
+  const captureDurationSeconds = (Date.now() - captureStartTime) / 1000;
+  const actualFps = frameCounter / captureDurationSeconds;
+  console.log(`✓ Screen capture finished. Total frames rendered: ${frameCounter} in ${captureDurationSeconds.toFixed(2)}s. Actual FPS: ${actualFps.toFixed(2)}`);
   await browser.close();
 
   // Step 4: Run FFmpeg to Compile Video
@@ -184,14 +187,15 @@ async function main() {
     }
 
     // FFmpeg compile parameters:
-    // -framerate ~30: frame rate of our screenshots
+    // -r actualFps: stretches/decompresses the fast-forward timelapse back into a gorgeous, normal-speed, real-time video!
     // -i frames/frame_%04d.png: inputs our sequential PNG files
     // -i voiceover.aiff: inputs the Alva voiceover
+    // -r 25: output video standard framerate
     // -c:v libx264: H.264 video codec (standard web mp4)
     // -pix_fmt yuv420p: Pixel format for optimal compatibility
     // -c:a aac: AAC audio compression
-    // -shortest: automatically stops at the shortest track duration (voiceover is ~42-43s)
-    const ffmpegCmd = `ffmpeg -r 25 -i "${path.join(FRAMES_DIR, "frame_%04d.png")}" -i "${VOICEOVER_AUDIO}" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -y "${OUTPUT_VIDEO}"`;
+    // -shortest: automatically stops at the shortest track duration
+    const ffmpegCmd = `ffmpeg -r ${actualFps} -i "${path.join(FRAMES_DIR, "frame_%04d.png")}" -i "${VOICEOVER_AUDIO}" -r 25 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -y "${OUTPUT_VIDEO}"`;
     
     console.log("Executing FFmpeg command:", ffmpegCmd);
     execSync(ffmpegCmd);
