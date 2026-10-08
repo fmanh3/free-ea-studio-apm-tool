@@ -30,3 +30,9 @@ terraform.tfstate.*
 # IDEs
 .vscode/
 .idea/
+
+# Video generator outputs
+scripts/video_generator/frames/
+scripts/video_generator/*.mp4
+scripts/video_generator/*.aiff
+scripts/video_generator/*.txt
