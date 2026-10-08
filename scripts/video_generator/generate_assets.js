@@ -57,6 +57,14 @@ async function main() {
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080 });
 
+  // Track browser console logs and exceptions to debug freeze
+  page.on("console", msg => {
+    console.log(`[BROWSER ${msg.type().toUpperCase()}]:`, msg.text());
+  });
+  page.on("pageerror", err => {
+    console.error("[BROWSER CRASH/EXCEPTION]:", err.toString());
+  });
+
   // Navigate & Log in
   console.log("Navigating to production URL...");
   await page.goto("https://free-apm-app-625737625145.europe-west1.run.app", { waitUntil: "networkidle2" });
@@ -153,12 +161,9 @@ async function main() {
   await page.type('input[placeholder*="fråga"]', question, { delay: 60 });
   await delay(800);
 
-  // Click Send / Ask AURA
-  await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll("button"));
-    const askBtn = buttons.find(b => b.textContent.includes("Fråga") || b.textContent.includes("Skicka"));
-    if (askBtn) askBtn.click();
-  });
+  // Press Enter to submit the form (since the submit button has no text, only an icon)
+  console.log("Submitting chat query by pressing Enter...");
+  await page.keyboard.press("Enter");
   
   // Wait 10 seconds for AURA response to render (and the user to read it)
   await delay(10000);
